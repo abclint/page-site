@@ -1,0 +1,77 @@
+# 安全扫描门禁 + 发布 GitHub Pages
+#
+# 流程：push 到 main → scan(敏感信息门禁) → build(收集站点内容) → deploy(官方 Pages 部署)。
+# deploy 经 needs 链依赖 scan，扫描检出高危泄露则整条流水线失败、不发布。
+#
+# 前置（一次性手动操作，代码无法完成）：
+#   仓库 Settings → Pages → Build and deployment → Source 选择 “GitHub Actions”。
+name: 安全扫描门禁 + 发布 GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 权限最小化：仅 Pages 官方部署所需的三项。
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时刻只允许一个发布在跑，避免并发部署互相覆盖。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # ── 门禁：扫描本次改动的站点内容，检出高危泄露则失败 ──────────────────────
+  scan:
+    name: 安全扫描（敏感信息门禁）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0          # 需要历史，scan 脚本靠 git diff 取“改动文件”
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 扫描改动的 HTML/JS/CSS/JSON
+        env:
+          SCAN_BASE: ${{ github.event.before }}   # 上一次 push 的 SHA（首次为全 0，脚本自动回退）
+          SCAN_HEAD: ${{ github.sha }}
+        run: node scripts/scan-secrets.mjs
+
+  # ── 构建：把站点内容收集到 _site（排除工具/测试目录，保留目录层级）──────────
+  build:
+    name: 构建发布产物
+    needs: scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v5
+      - name: 收集站点内容到 _site/（rsync -a 原样保留目录层级）
+        run: |
+          mkdir -p _site
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='scripts' \
+            --exclude='node_modules' \
+            --exclude='_site' \
+            --exclude='README.md' \
+            ./ ./_site/
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./_site          # 站点根 = _site，artifact 以 tar 打包，目录层级原样保留
+
+  # ── 部署：官方 Pages 部署 ─────────────────────────────────────────────────
+  deploy:
+    name: 部署到 GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

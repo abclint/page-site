@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<!--
+  扫描器自测样例（高危）：故意包含一个【伪造的】私钥块。
+  仅用于验证扫描脚本能检出高危泄露并以非 0 退出码阻断发布。
+  此目录(scripts/__fixtures__/)永不发布到站点，自动扫描模式也会排除它。
+-->
+<html lang="zh">
+  <head><meta charset="utf-8"><title>fixture: private key leak</title></head>
+  <body>
+    <pre>
+-----BEGIN RSA PRIVATE KEY-----
+MIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Q
+FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEdGVzdA==
+-----END RSA PRIVATE KEY-----
+    </pre>
+    <!-- 内联脚本里的密钥也要能被检出（AWS 官方文档示例 key，非真实凭据） -->
+    <script>
+      const accessKeyId = "AKIAIOSFODNN7EXAMPLE";
+    </script>
+  </body>
+</html>
