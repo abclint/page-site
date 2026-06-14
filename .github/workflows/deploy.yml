@@ -1,77 +1,117 @@
-# 安全扫描门禁 + 发布 GitHub Pages
-#
-# 流程：push 到 main → scan(敏感信息门禁) → build(收集站点内容) → deploy(官方 Pages 部署)。
-# deploy 经 needs 链依赖 scan，扫描检出高危泄露则整条流水线失败、不发布。
-#
-# 前置（一次性手动操作，代码无法完成）：
-#   仓库 Settings → Pages → Build and deployment → Source 选择 “GitHub Actions”。
 name: 安全扫描门禁 + 发布 GitHub Pages
+#
+# 流程：scan(密钥+卫生门禁) + lint(工作流自检) 并行 → build(收集发布集) → deploy。
+# build 经 needs 依赖 scan 与 lint，任一不过都不发布。
+#
+# 前置(一次性手动,代码无法完成)：
+#   仓库 Settings → Pages → Build and deployment → Source 选 “GitHub Actions”。
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# 权限最小化：仅 Pages 官方部署所需的三项。
+# 权限最小化：顶层只给只读;pages/id-token 写权限只下放给 deploy job。
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# 同一时刻只允许一个发布在跑，避免并发部署互相覆盖。
+# 同一时刻只允许一个发布在跑。
 concurrency:
   group: pages
   cancel-in-progress: false
 
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  ACTIONLINT_VERSION: "1.7.12"
+
 jobs:
-  # ── 门禁：扫描本次改动的站点内容，检出高危泄露则失败 ──────────────────────
+  # ── 门禁：密钥(gitleaks) + 卫生(IP/PII/Web) ──────────────────────────────
   scan:
-    name: 安全扫描（敏感信息门禁）
+    name: 安全扫描门禁
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          fetch-depth: 0          # 需要历史，scan 脚本靠 git diff 取“改动文件”
-      - uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '22'
-      - name: 扫描改动的 HTML/JS/CSS/JSON
-        env:
-          SCAN_BASE: ${{ github.event.before }}   # 上一次 push 的 SHA（首次为全 0，脚本自动回退）
-          SCAN_HEAD: ${{ github.sha }}
-        run: node scripts/scan-secrets.mjs
+          node-version: "22"
 
-  # ── 构建：把站点内容收集到 _site（排除工具/测试目录，保留目录层级）──────────
+      - name: 安装 gitleaks 二进制(免 license)
+        run: |
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tgz
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          sudo install /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: 收集发布集(_site)
+        run: bash scripts/build-site.sh _site
+
+      - name: gitleaks 扫描发布集(密钥/凭据)
+        id: gitleaks
+        run: |
+          gitleaks dir _site -c .gitleaks.toml --redact --no-banner --exit-code 1 \
+            --report-format json --report-path /tmp/gitleaks.json
+
+      - name: gitleaks 失败摘要(脱敏)
+        if: failure() && steps.gitleaks.conclusion == 'failure'
+        run: node scripts/gitleaks-summary.mjs /tmp/gitleaks.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 卫生扫描(IP / 中国PII / Web)
+        id: hygiene
+        run: node scripts/scan-secrets.mjs _site | tee /tmp/hygiene.log
+
+      - name: 卫生失败摘要(脱敏)
+        if: failure() && steps.hygiene.conclusion == 'failure'
+        run: |
+          { echo "## ⛔ 卫生扫描检出高危项(已脱敏)"; echo '```'; cat /tmp/hygiene.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── 工作流自身供应链自检 ─────────────────────────────────────────────────
+  lint:
+    name: 工作流自检(actionlint + zizmor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - name: actionlint
+        run: |
+          curl -sSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" -o /tmp/al.tgz
+          tar -xzf /tmp/al.tgz -C /tmp actionlint
+          /tmp/actionlint -color
+      - name: zizmor(GitHub Actions 安全审计)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pipx run zizmor .github/workflows/
+
+  # ── 构建发布产物 ─────────────────────────────────────────────────────────
   build:
     name: 构建发布产物
-    needs: scan
+    needs: [scan, lint]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/configure-pages@v5
-      - name: 收集站点内容到 _site/（rsync -a 原样保留目录层级）
-        run: |
-          mkdir -p _site
-          rsync -a \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='scripts' \
-            --exclude='node_modules' \
-            --exclude='_site' \
-            --exclude='README.md' \
-            ./ ./_site/
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          path: ./_site          # 站点根 = _site，artifact 以 tar 打包，目录层级原样保留
+          persist-credentials: false
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - name: 收集发布集(_site,目录层级原样保留)
+        run: bash scripts/build-site.sh _site
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: ./_site
 
-  # ── 部署：官方 Pages 部署 ─────────────────────────────────────────────────
+  # ── 部署到 GitHub Pages ──────────────────────────────────────────────────
   deploy:
     name: 部署到 GitHub Pages
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

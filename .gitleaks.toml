@@ -1,0 +1,30 @@
+title = "page-site 密钥扫描配置"
+
+# 继承 gitleaks 内置规则(覆盖 AWS / GitHub / Slack / Stripe / OpenAI / 私钥 / JWT 等)。
+# 实测:内置规则未覆盖中国云厂商 AccessKey,故在下方自定义补充。
+[extend]
+useDefault = true
+
+# ── 中国云厂商 AccessKey(默认规则未覆盖) ──
+# 只收录前缀明确、误报率低的厂商;百度(AK)/华为([A-Z0-9]{20})前缀过泛,误报多,故不收录。
+
+[[rules]]
+id = "aliyun-access-key-id"
+description = "阿里云 AccessKey ID"
+regex = '''\bLTAI[A-Za-z0-9]{12,20}\b'''
+keywords = ["LTAI"]
+
+[[rules]]
+id = "tencent-cloud-secret-id"
+description = "腾讯云 SecretId"
+regex = '''\bAKID[A-Za-z0-9]{13,40}\b'''
+keywords = ["AKID"]
+
+[[rules]]
+id = "jd-cloud-access-key"
+description = "京东云 AccessKey"
+regex = '''\bJDC_[A-Z0-9]{28,32}\b'''
+keywords = ["JDC_"]
+
+# 不设 [allowlist]:CI 只扫 _site/ 发布集(由 build-site.sh 生成,已排除 scripts/),
+# 测试 fixtures 物理上不在发布集内,无需 allowlist——也就杜绝了"用 allowlist 绕过门禁"的风险。
