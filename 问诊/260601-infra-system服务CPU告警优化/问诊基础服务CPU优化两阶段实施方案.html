@@ -1,0 +1,1439 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>问诊基础服务 CPU 优化两阶段实施方案</title>
+  <style>
+    :root {
+      --bg: #f4f7fa;
+      --paper: #ffffff;
+      --ink: #1f2937;
+      --muted: #64748b;
+      --line: #d8e0ea;
+      --blue: #155e9f;
+      --blue-soft: #e8f2fb;
+      --red: #b42318;
+      --red-soft: #fff1f0;
+      --amber: #a15c07;
+      --amber-soft: #fff7e6;
+      --green: #047857;
+      --green-soft: #ecfdf5;
+      --purple: #6d28d9;
+      --purple-soft: #f3e8ff;
+      --code-bg: #f8fafc;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      line-height: 1.66;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    header {
+      padding: 30px 34px;
+      margin-bottom: 18px;
+    }
+
+    section {
+      padding: 24px 28px;
+      margin-top: 16px;
+    }
+
+    h1, h2, h3, h4, p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: 12px;
+      font-size: 30px;
+      line-height: 1.25;
+    }
+
+    h2 {
+      margin-bottom: 14px;
+      font-size: 22px;
+      line-height: 1.35;
+    }
+
+    h3 {
+      margin: 20px 0 10px;
+      font-size: 17px;
+    }
+
+    h4 {
+      margin: 16px 0 8px;
+      font-size: 15px;
+    }
+
+    p { margin-bottom: 12px; }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+      border-bottom: 1px dashed rgba(21, 94, 159, 0.35);
+    }
+
+    a:hover { border-bottom-style: solid; }
+
+    ul, ol { padding-left: 22px; }
+    li { margin: 5px 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 18px;
+      overflow: hidden;
+      border-radius: 8px;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #eef5fb;
+      color: #12395c;
+      font-weight: 700;
+    }
+
+    tr:nth-child(even) td { background: #fbfdff; }
+
+    code {
+      background: #eef2f7;
+      border: 1px solid #dce4ef;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    pre {
+      margin: 12px 0 18px;
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      overflow: auto;
+      line-height: 1.55;
+    }
+
+    pre code {
+      padding: 0;
+      border: none;
+      background: transparent;
+      font-size: 13px;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .meta div, .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 13px 15px;
+    }
+
+    .meta span, .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .meta strong, .metric strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--ink);
+      font-size: 15px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+
+    .pill.blue { color: var(--blue); background: var(--blue-soft); border-color: #bfdbfe; }
+    .pill.green { color: var(--green); background: var(--green-soft); border-color: #bbf7d0; }
+    .pill.amber { color: var(--amber); background: var(--amber-soft); border-color: #fed7aa; }
+    .pill.red { color: var(--red); background: var(--red-soft); border-color: #fecaca; }
+    .pill.purple { color: var(--purple); background: var(--purple-soft); border-color: #e9d5ff; }
+
+    .box {
+      margin: 12px 0 16px;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fbfdff;
+    }
+
+    .box strong:first-child { display: block; margin-bottom: 6px; }
+    .box.info { border-color: #bfdbfe; background: var(--blue-soft); }
+    .box.ok { border-color: #bbf7d0; background: var(--green-soft); }
+    .box.warn { border-color: #fed7aa; background: var(--amber-soft); }
+    .box.danger { border-color: #fecaca; background: var(--red-soft); }
+    .box.purple { border-color: #e9d5ff; background: var(--purple-soft); }
+
+    .toc {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 18px;
+      margin: 10px 0 0;
+      padding-left: 0;
+      list-style: none;
+    }
+
+    .toc li {
+      border-bottom: 1px dashed #d9e2ec;
+      padding: 7px 0;
+      margin: 0;
+    }
+
+    .timeline {
+      position: relative;
+      margin: 16px 0 6px;
+      padding-left: 28px;
+    }
+
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 9px;
+      top: 3px;
+      bottom: 3px;
+      width: 2px;
+      background: #cbd5e1;
+    }
+
+    .step {
+      position: relative;
+      margin: 0 0 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+    }
+
+    .step::before {
+      content: "";
+      position: absolute;
+      left: -24px;
+      top: 17px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--blue);
+      border: 2px solid white;
+      box-shadow: 0 0 0 1px var(--blue);
+    }
+
+    .step h3 { margin-top: 0; }
+
+    .small { color: var(--muted); font-size: 13px; }
+    .nowrap { white-space: nowrap; }
+
+    @media (max-width: 860px) {
+      main { width: min(100% - 18px, 1180px); padding-top: 12px; }
+      header, section { padding: 20px 16px; }
+      .meta, .grid-2, .grid-3, .toc { grid-template-columns: 1fr; }
+      h1 { font-size: 24px; }
+    }
+
+    @media print {
+      body { background: white; }
+      main { width: 100%; padding: 0; }
+      header, section { break-inside: avoid; box-shadow: none; }
+      a { color: inherit; border: none; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="pill blue">执行版方案</span>
+    <span class="pill green">两阶段</span>
+    <span class="pill amber">租户隔离优先</span>
+    <h1>问诊基础服务 CPU 优化两阶段实施方案</h1>
+    <p>
+      本文将《问诊基础服务 CPU 优化改造方案报告》和 JSqlParser 缓存调优建议合并成可执行的两阶段方案。
+      主线原则是：<strong>第一阶段严格按原报告做单点 Mapper 数据权限短路；第二阶段只在第一阶段后仍存在明确 JSqlParser 缓存热点时，再做全局缓存可配置化与调优。</strong>
+    </p>
+
+    <div class="meta">
+      <div><span>生成日期</span><strong>2026-06-01</strong></div>
+      <div><span>适用服务</span><strong>saas-inquiry-user-server</strong></div>
+      <div><span>技术栈</span><strong>JDK 21 / MyBatis-Plus 3.5.12 / JSqlParser 5.1</strong></div>
+      <div><span>核心约束</span><strong>不破坏租户隔离、逻辑删除、数据权限语义</strong></div>
+    </div>
+  </header>
+
+  <section id="toc">
+    <h2>目录</h2>
+    <ul class="toc">
+      <li><a href="#conclusion">1. 结论与优先级</a></li>
+      <li><a href="#background">2. 背景与故障链路</a></li>
+      <li><a href="#scope">3. 总体范围与禁区</a></li>
+      <li><a href="#stage1">4. 第一阶段：UserRoleMapper 精确短路</a></li>
+      <li><a href="#stage1-check">5. 第一阶段验证与灰度</a></li>
+      <li><a href="#between">6. 阶段间观察与决策门槛</a></li>
+      <li><a href="#stage2">7. 第二阶段：JSqlParser 缓存可配置化</a></li>
+      <li><a href="#stage2-check">8. 第二阶段验证与灰度</a></li>
+      <li><a href="#rollback">9. 回滚策略</a></li>
+      <li><a href="#appendix">10. 附录：命令与检查清单</a></li>
+    </ul>
+  </section>
+
+  <section id="conclusion">
+    <h2>1. 结论与优先级</h2>
+    <div class="box ok">
+      <strong>最终结论</strong>
+      优先执行原优化报告中的第一阶段方案：只对 <code>UserRoleMapper.getUserListByRoleIds</code> 做精确的
+      <code>@InterceptorIgnore(dataPermission = "true")</code> 短路，并通过 XML MappedStatement 保证注解命中。
+      JSqlParser 缓存调优必须作为第二阶段，在确认第一阶段后仍有 <code>JsqlParseCache.getStatement()</code> 明确热点时再实施。
+    </div>
+
+    <table>
+      <thead>
+      <tr>
+        <th>阶段</th>
+        <th>方案</th>
+        <th>目标</th>
+        <th>影响面</th>
+        <th>优先级</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td><span class="pill green">第一阶段</span></td>
+        <td><code>UserRoleMapper.getUserListByRoleIds</code> 精确跳过 DataPermission</td>
+        <td>减少高频无效进入 <code>DataPermissionInterceptor -> JsqlParserGlobal.parse</code> 的 SQL</td>
+        <td>单个 Mapper 方法，风险可边界化验证</td>
+        <td><strong>必须优先</strong></td>
+      </tr>
+      <tr>
+        <td><span class="pill purple">第二阶段</span></td>
+        <td>JSqlParser cache 可配置化、指标化、灰度调优</td>
+        <td>降低仍然进入 parse 链路后的缓存命中/反序列化/重复解析成本</td>
+        <td>全局 SQL 解析缓存，影响所有相关插件</td>
+        <td>按观测结果触发</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <div class="box warn">
+      <strong>为什么不先调缓存？</strong>
+      缓存调优不能减少 <code>JsqlParserGlobal.parse()</code> 的入口次数；而故障报告的热点链路来自数据权限 SQL 解析。
+      对于本来不需要数据权限解析的 <code>system_user_role</code> 查询，正确做法是让它不要进入该解析链路，而不是优先扩大全局缓存。
+    </div>
+  </section>
+
+  <section id="background">
+    <h2>2. 背景与故障链路</h2>
+    <h3>2.1 已知故障链路</h3>
+    <pre><code>DubboServerHandler
+  -> PermissionServiceImpl.getUserListByRoleIds
+  -> UserRoleMapper.getUserListByRoleIds
+  -> DataPermissionInterceptor.beforeQuery
+  -> JsqlParserGlobal.parse
+  -> JsqlParseCache.getStatement
+  -> JdkSerialCaffeineJsqlParseCache.getStatement</code></pre>
+
+    <h3>2.2 关键判断</h3>
+    <ul>
+      <li>旧实例与新实例请求量、SQL 长度接近，但旧实例 <code>parse()</code> 平均耗时更高。</li>
+      <li>高 CPU 线程集中在 <code>mybatis-plus-jsqlParser-*</code> 一类线程与 JSqlParser 解析链路。</li>
+      <li>当前工程依赖 MyBatis-Plus 3.5.12，yudao 默认配置中 JSqlParser cache 可能为 <code>JdkSerialCaffeineJsqlParseCache(maximumSize=1024, expireAfterWrite=5s)</code>。</li>
+      <li><code>JdkSerialCaffeineJsqlParseCache</code> 命中缓存时仍需要从 <code>byte[]</code> 反序列化 AST，命中并不是零成本。</li>
+      <li>当前可见的数据权限配置未体现 <code>system_user_role</code> 的部门/本人数据范围规则，因此目标查询很可能属于高频无效解析。</li>
+    </ul>
+
+    <div class="box info">
+      <strong>本方案的优化方向</strong>
+      第一阶段减少无效 parse 入口；第二阶段优化残余 parse 的缓存成本。两者不是替代关系，而是先后关系。
+    </div>
+  </section>
+
+  <section id="scope">
+    <h2>3. 总体范围与禁区</h2>
+
+    <h3>3.1 本次纳入范围</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>范围</th>
+        <th>说明</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>第一阶段唯一业务改造点</td>
+        <td><code>cn.iocoder.yudao.module.system.dal.mysql.permission.UserRoleMapper#getUserListByRoleIds</code></td>
+      </tr>
+      <tr>
+        <td>第一阶段 SQL 表</td>
+        <td><code>system_user_role</code>，用于查询用户-角色关系中间结果</td>
+      </tr>
+      <tr>
+        <td>第二阶段技术改造点</td>
+        <td><code>JsqlParserGlobal.setJsqlParseCache(...)</code> 的配置化、统计指标和灰度切换</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h3>3.2 硬性禁区</h3>
+    <div class="box danger">
+      <strong>以下做法禁止作为本次优化手段</strong>
+      <ul>
+        <li>禁止无条件关闭全局数据权限插件；若采用 <a href="#data-permission-conditional">6.2 条件化关闭方案</a>，必须先确认生产运行时不存在有效 <code>DataPermissionRule</code> 表配置，并配置启动保护。</li>
+        <li>禁止添加 <code>@TenantIgnore</code>。</li>
+        <li>禁止添加 <code>@InterceptorIgnore(tenantLine = "true")</code>。</li>
+        <li>禁止把 <code>system_user_role</code>、<code>system_tenant_user_relation</code> 加入租户插件 ignore-tables。</li>
+        <li>禁止修改 <code>AdminUserMapper.getTenantAvailableUserList</code> 作为第一阶段内容。</li>
+        <li>禁止 blanket-ignore 系统用户、员工列表、角色用户等宽范围 SQL。</li>
+        <li>禁止通过 <code>TenantUtils.executeIgnore</code> 或类似方式修复空结果。</li>
+      </ul>
+    </div>
+
+    <h3>3.3 语义必须保持</h3>
+    <ul>
+      <li><strong>租户隔离：</strong>仍由 <code>TenantLineInnerInterceptor</code> 追加租户条件。</li>
+      <li><strong>逻辑删除：</strong>从 BaseMapper 切换到 XML 后，必须显式保留 <code>deleted = false</code> 或等价条件。</li>
+      <li><strong>空集合保护：</strong>Service 层继续提前返回空；XML 层也必须 fail-closed。</li>
+      <li><strong>数据范围：</strong><code>getUserListByRoleIds</code> 只返回用户角色关系，不代表当前登录人可见员工列表；部门/本人范围仍走原有专用链路。</li>
+    </ul>
+  </section>
+
+  <section id="stage1">
+    <h2>4. 第一阶段：UserRoleMapper 精确短路</h2>
+
+    <div class="box ok">
+      <strong>阶段目标</strong>
+      将 <code>UserRoleMapper.getUserListByRoleIds</code> 从 Java default helper 改为明确的 MyBatis MappedStatement，
+      使 <code>@InterceptorIgnore(dataPermission = "true")</code> 能准确命中该 SQL，跳过 DataPermission SQL 解析，同时继续保留租户插件和逻辑删除约束。
+    </div>
+
+    <h3>4.1 当前问题</h3>
+    <p>
+      当前方法如果是 Java default helper，并在内部委托 <code>BaseMapper.selectList</code>，则注解加在 default 方法上不一定能作用到最终执行的 MappedStatement。
+      实际执行的 mappedStatementId 可能仍是 BaseMapper 相关语句，导致 <code>@InterceptorIgnore</code> 不命中，CPU 优化无效。
+    </p>
+
+    <h3>4.2 Mapper 改造</h3>
+    <p>将 <code>UserRoleMapper.getUserListByRoleIds</code> 改为抽象方法，并只添加数据权限忽略：</p>
+    <pre><code>import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
+import org.apache.ibatis.annotations.Param;
+
+@InterceptorIgnore(dataPermission = "true")
+List&lt;UserRoleDO&gt; getUserListByRoleIds(@Param("roleIds") Set&lt;Long&gt; roleIds);</code></pre>
+
+    <div class="box warn">
+      <strong>注意</strong>
+      这里不能保留 default 方法体；否则可能继续委托到 <code>BaseMapper.selectList</code>，导致注解没有命中真实 SQL。
+    </div>
+
+    <h3>4.3 XML MappedStatement</h3>
+    <p>新增或修改 <code>UserRoleMapper.xml</code>，确保 namespace、select id、参数名完全匹配。</p>
+    <pre><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd"&gt;
+&lt;mapper namespace="cn.iocoder.yudao.module.system.dal.mysql.permission.UserRoleMapper"&gt;
+
+    &lt;select id="getUserListByRoleIds"
+            resultType="cn.iocoder.yudao.module.system.dal.dataobject.permission.UserRoleDO"&gt;
+        select *
+        from system_user_role
+        &lt;where&gt;
+            deleted = false
+            &lt;choose&gt;
+                &lt;when test="roleIds != null and roleIds.size() &gt; 0"&gt;
+                    and role_id in
+                    &lt;foreach collection="roleIds" item="roleId" open="(" separator="," close=")"&gt;
+                        #{roleId}
+                    &lt;/foreach&gt;
+                &lt;/when&gt;
+                &lt;otherwise&gt;
+                    and 1 = 0
+                &lt;/otherwise&gt;
+            &lt;/choose&gt;
+        &lt;/where&gt;
+    &lt;/select&gt;
+
+&lt;/mapper&gt;</code></pre>
+
+    <h4>XML 要点</h4>
+    <ul>
+      <li><code>namespace</code> 必须是 <code>cn.iocoder.yudao.module.system.dal.mysql.permission.UserRoleMapper</code>。</li>
+      <li><code>select id</code> 必须是 <code>getUserListByRoleIds</code>。</li>
+      <li>Mapper 参数必须使用 <code>@Param("roleIds")</code>，XML 中 <code>collection="roleIds"</code>。</li>
+      <li>必须显式包含 <code>deleted = false</code> 或数据库实际等价条件。</li>
+      <li>空集合必须 <code>and 1 = 0</code>，不能退化成全租户或全表查询。</li>
+      <li><strong>不要手写 tenant_id 条件</strong>，租户条件必须继续由 <code>TenantLineInnerInterceptor</code> 追加。</li>
+    </ul>
+
+    <h3>4.4 Service 层保护</h3>
+    <p>保留现有空集合提前返回逻辑：</p>
+    <pre><code>public List&lt;UserRoleVO&gt; getUserListByRoleIds(Set&lt;Long&gt; roleIds) {
+    if (CollUtil.isEmpty(roleIds)) {
+        return new ArrayList&lt;&gt;();
+    }
+    List&lt;UserRoleDO&gt; userListByRoleIds = userRoleMapper.getUserListByRoleIds(roleIds);
+    return UserRoleConvert.INSTANCE.convertVo(userListByRoleIds);
+}</code></pre>
+
+    <h3>4.5 第一阶段静态门禁</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>检查项</th>
+        <th>通过标准</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>Mapper 方法</td>
+        <td><code>getUserListByRoleIds</code> 是抽象方法，不再是 default helper。</td>
+      </tr>
+      <tr>
+        <td>InterceptorIgnore</td>
+        <td>只允许 <code>@InterceptorIgnore(dataPermission = "true")</code>。</td>
+      </tr>
+      <tr>
+        <td>租户注解</td>
+        <td>不得出现 <code>@TenantIgnore</code> 或 <code>@InterceptorIgnore(tenantLine = "true")</code>。</td>
+      </tr>
+      <tr>
+        <td>XML namespace/id</td>
+        <td>namespace 和 select id 与 Mapper 方法完全匹配。</td>
+      </tr>
+      <tr>
+        <td>逻辑删除</td>
+        <td>XML 包含 <code>deleted = false</code> 或等价条件。</td>
+      </tr>
+      <tr>
+        <td>空集合</td>
+        <td>Service 返回空，XML <code>otherwise and 1 = 0</code>。</td>
+      </tr>
+      <tr>
+        <td>AdminUserMapper</td>
+        <td>第一阶段不得修改 <code>AdminUserMapper.getTenantAvailableUserList</code>。</td>
+      </tr>
+      <tr>
+        <td>配置文件</td>
+        <td>不得新增 <code>system_user_role</code> 或 <code>system_tenant_user_relation</code> 到租户 ignore-tables。</td>
+      </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="stage1-check">
+    <h2>5. 第一阶段验证与灰度</h2>
+
+    <h3>5.1 功能回归用例</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>用例</th>
+        <th>验证目标</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>同租户正常 roleIds</td>
+        <td>新旧结果一致，返回同一租户下的用户角色关系。</td>
+      </tr>
+      <tr>
+        <td>null / empty roleIds</td>
+        <td>返回空列表，不访问全表，不返回全租户数据。</td>
+      </tr>
+      <tr>
+        <td>deleted=true 关系</td>
+        <td>不返回逻辑删除的用户角色关系。</td>
+      </tr>
+      <tr>
+        <td>A/B 租户相同 roleId 或 roleCode</td>
+        <td>不得跨租户泄露用户角色关系。</td>
+      </tr>
+      <tr>
+        <td>普通 <code>getUserListByRoleCodes</code></td>
+        <td>用户状态、租户员工关系过滤仍保持。</td>
+      </tr>
+      <tr>
+        <td><code>getUserListByRoleCodes_Permission</code></td>
+        <td>部门/本人数据范围过滤仍保持，不被第一阶段影响。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h3>5.2 SQL 与链路验证</h3>
+    <div class="grid-2">
+      <div class="box info">
+        <strong>必须确认 mappedStatementId</strong>
+        最终执行的 mappedStatementId 应是：
+        <pre><code>cn.iocoder.yudao.module.system.dal.mysql.permission.UserRoleMapper.getUserListByRoleIds</code></pre>
+      </div>
+      <div class="box info">
+        <strong>必须确认租户条件</strong>
+        采样最终 SQL / BoundSql，确认仍由租户插件追加 <code>tenant_id</code> 条件。若未追加，必须暂停发布并修复租户插件配置，不能用 <code>@TenantIgnore</code> 兜底。
+      </div>
+    </div>
+
+    <div class="box warn">
+      <strong>验收口径说明</strong>
+      <code>@InterceptorIgnore(dataPermission = "true")</code> 命中后，目标 SQL 仍可能进入
+      <code>DataPermissionInterceptor.beforeQuery</code> 方法，但应在方法开头快速返回，不再从该拦截器调用
+      <code>JsqlParserGlobal.parse()</code>。同时，租户插件仍会解析 SQL 以追加 <code>tenant_id</code>，因此不能以“目标 SQL 完全不进 JSqlParser”作为第一阶段验收标准。
+    </div>
+
+    <h3>5.3 Arthas 建议命令</h3>
+    <pre><code># 确认目标 MappedStatement 的 dataPermission ignore 生效
+ognl -c &lt;classLoaderHash&gt; '@com.baomidou.mybatisplus.core.plugins.InterceptorIgnoreHelper@willIgnoreDataPermission("cn.iocoder.yudao.module.system.dal.mysql.permission.UserRoleMapper.getUserListByRoleIds")'
+
+# 追踪目标 DataPermissionInterceptor 调用，确认命中后不再下钻到 JsqlParserGlobal.parse
+trace com.baomidou.mybatisplus.extension.plugins.inner.DataPermissionInterceptor beforeQuery 'params[1].id=="cn.iocoder.yudao.module.system.dal.mysql.permission.UserRoleMapper.getUserListByRoleIds"' -n 20
+
+# 观察 JSqlParser parse 调用量与耗时；第一阶段目标是 DataPermission 相关 parse 下降，不是 parse 归零
+monitor com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal parse -c 5
+
+# 只追踪慢 parse
+trace com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal parse '#cost &gt; 1' -n 20
+
+# 观察是否仍集中在缓存 getStatement
+trace com.baomidou.mybatisplus.extension.parser.cache.AbstractCaffeineJsqlParseCache get '#cost &gt; 1' -n 20</code></pre>
+
+    <h3>5.4 第一阶段生产灰度</h3>
+    <div class="timeline">
+      <div class="step">
+        <h3>Step 1：预发环境</h3>
+        <p>完成静态门禁、功能回归、A/B 租户负样本、SQL 采样和 Arthas 验证。</p>
+      </div>
+      <div class="step">
+        <h3>Step 2：生产单实例 / 小流量</h3>
+        <p>发布单个实例或小流量实例，观察 30 分钟，确认无 BindingException、Invalid bound statement、XML 加载异常、SQL 慢查询异常。</p>
+      </div>
+      <div class="step">
+        <h3>Step 3：正常流量观察</h3>
+        <p>观察 60 分钟，重点对比 <code>JsqlParserGlobal.parse</code> total / avg-rt、接口 P95/P99、CPU 与错误率。</p>
+      </div>
+      <div class="step">
+        <h3>Step 4：覆盖高峰后扩大</h3>
+        <p>至少覆盖 120 分钟或一个业务高峰，再扩大到更多实例。</p>
+      </div>
+    </div>
+
+    <h3>5.5 第一阶段验收标准</h3>
+    <ul>
+      <li>最终执行的 mappedStatementId 是 <code>cn.iocoder.yudao.module.system.dal.mysql.permission.UserRoleMapper.getUserListByRoleIds</code>。</li>
+      <li><code>InterceptorIgnoreHelper.willIgnoreDataPermission(mappedStatementId)</code> 返回 <code>true</code>。</li>
+      <li>目标 mappedStatement 即使出现在 <code>DataPermissionInterceptor.beforeQuery</code> 采样中，也必须在命中 ignore 后快速返回，不再从 DataPermission 链路调用 <code>JsqlParserGlobal.parse()</code>。</li>
+      <li>租户条件仍存在，A/B 租户负样本不泄露；目标 SQL 因 <code>TenantLineInnerInterceptor</code> 仍进入 JSqlParser 属于正常现象。</li>
+      <li>逻辑删除记录不返回。</li>
+      <li>空 roleIds 返回空，不产生全表/全租户查询。</li>
+      <li><code>system_user_role</code> 查询执行计划合理，慢 SQL、扫描行数、DB span 无异常放大。</li>
+      <li>DataPermission 相关 JSqlParser 栈明显下降。</li>
+      <li>CPU、接口 P95/P99 较旧实例改善，且无新增功能异常。</li>
+    </ul>
+  </section>
+
+  <section id="between">
+    <h2>6. 阶段间观察与决策门槛</h2>
+
+    <p>
+      第一阶段上线后，不应立即进入第二阶段。需要先收集残余热点，判断是否仍然有必要对全局 JSqlParser cache 动手。
+    </p>
+
+    <h3>6.1 需要收集的数据</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>数据</th>
+        <th>用途</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>仍从 <code>DataPermissionInterceptor.beforeQuery</code> 下钻到 <code>JsqlParserGlobal.parse</code> 的 mappedStatementId TopN</td>
+        <td>识别是否还有其他高频无效数据权限解析 SQL；仅进入 beforeQuery 但命中 ignore 后快速返回的不计入。</td>
+      </tr>
+      <tr>
+        <td>生产运行时 <code>DataPermissionRuleFactory</code> 中实际生效的规则与 tableNames</td>
+        <td>确认当前 DataPermission 是否存在“有拦截器、无有效表规则”的全局 no-op parse 情况。</td>
+      </tr>
+      <tr>
+        <td><code>JsqlParserGlobal.parse</code> total / avg-rt / max-rt</td>
+        <td>判断 parse 总量和平均耗时是否已经回到可接受范围。</td>
+      </tr>
+      <tr>
+        <td><code>JsqlParseCache.getStatement</code> 慢调用</td>
+        <td>判断残余热点是否仍在缓存查询/反序列化。</td>
+      </tr>
+      <tr>
+        <td>CPU 火焰图 / top thread</td>
+        <td>确认热点是否仍为 <code>mybatis-plus-jsqlParser-*</code> 或 JSqlParser 相关栈。</td>
+      </tr>
+      <tr>
+        <td>Heap / Old GC / Full GC</td>
+        <td>判断是否存在缓存对象或 AST 反序列化造成的堆压力。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <div class="box warn">
+      <strong>阶段间关键判断</strong>
+      如果运行时规则显示 DataPermission 没有任何有效 tableNames，说明当前拦截器可能对大量 SELECT 只做 SQL parse、但不追加任何权限条件。
+      这种情况不应直接扩大缓存作为唯一治理手段，应单独评估“条件化注册/执行 DataPermissionInterceptor”或继续按 mappedStatementId 做安全短路。
+    </div>
+
+    <h3 id="data-permission-conditional">6.2 补充方案：DataPermissionInterceptor 条件化关闭</h3>
+    <div class="box warn">
+      <strong>方案定位</strong>
+      这是第一阶段后的阶段间治理分支，不是替代第一阶段的默认动作，也不是无条件关闭数据权限。
+      仅当生产运行时确认 <code>DataPermissionRule</code> 没有任何有效 <code>tableNames</code> 时，才允许让
+      <code>DataPermissionInterceptor</code> 不注册或被显式移除；一旦存在有效规则，必须注册拦截器或启动失败，避免静默越权。
+    </div>
+
+    <h4>6.2.1 现状依据</h4>
+    <ul>
+      <li><code>YudaoDataPermissionAutoConfiguration</code> 会创建 <code>DataPermissionRuleHandler</code>，再把 MyBatis-Plus 的 <code>DataPermissionInterceptor</code> 加入 <code>MybatisPlusInterceptor</code> 第 0 位。</li>
+      <li>MyBatis-Plus 3.5.12 中，非忽略的 <code>SELECT</code> 会先进入 <code>parserSingle()</code>，<code>UPDATE/DELETE</code> 会先进入 <code>parserMulti()</code>；即使后续规则返回 <code>null</code>，也已经触发 JSqlParser 解析。</li>
+      <li>当前工作区 <code>infra-user</code> 的 <code>DataPermissionConfiguration</code> 中 <code>rule.addDeptColumn(...)</code>、<code>rule.addUserColumn(...)</code> 均为注释状态，全仓也未发现启用中的同类配置。</li>
+      <li><code>@DataPermission(enable = false)</code>、<code>DataPermissionUtils.executeIgnore(...)</code>、<code>@InterceptorIgnore(dataPermission = "true")</code> 主要用于关闭或短路数据权限；当没有有效表规则时，它们不会改变结果集，但仍可能保留历史语义。</li>
+      <li><strong>最终判断必须以生产运行时 Bean 为准：</strong>启动时应打印并校验所有 <code>DataPermissionRule#getTableNames()</code>，不能只依赖源码 grep。</li>
+    </ul>
+
+    <h4>6.2.2 推荐改动方案</h4>
+    <table>
+      <thead>
+      <tr>
+        <th>步骤</th>
+        <th>改动</th>
+        <th>要求</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>1. 保留依赖</td>
+        <td>继续保留 <code>yudao-spring-boot-starter-biz-data-permission</code> 相关传递依赖。</td>
+        <td>不能直接删除依赖；当前代码仍 import <code>@DataPermission</code>、<code>DataPermissionUtils</code>、<code>DeptDataPermissionRuleCustomizer</code> 等类型。</td>
+      </tr>
+      <tr>
+        <td>2. 排除原自动注册</td>
+        <td>在目标服务中排除 <code>cn.iocoder.yudao.framework.datapermission.config.YudaoDataPermissionAutoConfiguration</code>。</td>
+        <td>只排除“注册 DataPermissionInterceptor 的自动配置”；不要排除租户插件、分页插件、MyBatis 基础配置。</td>
+      </tr>
+      <tr>
+        <td>3. 本地补回兼容 Bean</td>
+        <td>新增本地配置类，继续提供 <code>DataPermissionRuleFactory</code>、<code>DataPermissionRuleHandler</code>、<code>DataPermissionAnnotationAdvisor</code>。</td>
+        <td>保证已有注解、工具类和潜在注入点不因自动配置排除而缺 Bean。</td>
+      </tr>
+      <tr>
+        <td>4. 条件化注册拦截器</td>
+        <td>新增配置项，例如 <code>inquiry.mybatis-plus.data-permission.interceptor-mode=auto|on|off</code>。</td>
+        <td><code>on</code>：始终注册；<code>auto</code>：存在有效 <code>tableNames</code> 才注册；<code>off</code>：不注册，但发现有效规则时启动失败。</td>
+      </tr>
+      <tr>
+        <td>5. 启动保护</td>
+        <td>启动日志输出 mode、规则类、<code>tableNames</code>、最终是否注册 <code>DataPermissionInterceptor</code>。</td>
+        <td>如果 <code>off</code> 或 <code>auto</code> 决定不注册，但存在非空 <code>tableNames</code>，必须 fail-closed，不能仅 WARN 后继续启动。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <pre><code>spring:
+  autoconfigure:
+    exclude:
+      - cn.iocoder.yudao.framework.datapermission.config.YudaoDataPermissionAutoConfiguration
+
+inquiry:
+  mybatis-plus:
+    data-permission:
+      interceptor-mode: auto   # on | auto | off</code></pre>
+
+    <div class="box info">
+      <strong>本地条件化配置伪代码</strong>
+      <pre><code>创建 DataPermissionRuleFactoryImpl(rules)
+创建 DataPermissionRuleHandler(ruleFactory)
+
+hasEffectiveRule = 任一 DataPermissionRule#getTableNames() 非空
+
+if mode == ON:
+    注册 new DataPermissionInterceptor(handler)
+else if mode == AUTO and hasEffectiveRule:
+    注册 new DataPermissionInterceptor(handler)
+else if mode == OFF and hasEffectiveRule:
+    启动失败，提示存在有效数据权限规则
+else:
+    不注册 DataPermissionInterceptor，仅打印 no-op 说明
+
+继续注册 DataPermissionAnnotationAdvisor</code></pre>
+    </div>
+
+    <h4>6.2.3 不推荐的做法</h4>
+    <ul>
+      <li>不推荐直接删除 starter 或依赖树中的数据权限 jar，容易导致编译期缺类。</li>
+      <li>不推荐在公共框架层全局硬编码关闭，避免影响后续启用部门数据权限的服务。</li>
+      <li>不推荐只在启动后粗暴 <code>removeIf(DataPermissionInterceptor)</code> 且没有规则校验；这会留下启动期 SQL、初始化顺序和静默越权风险。</li>
+      <li>不得同时关闭 <code>TenantLineInnerInterceptor</code>、分页插件或逻辑删除相关能力。</li>
+    </ul>
+
+    <h4>6.2.4 影响范围</h4>
+    <table>
+      <thead>
+      <tr>
+        <th>维度</th>
+        <th>影响</th>
+        <th>风险等级</th>
+        <th>验证要求</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>编译依赖</td>
+        <td>保留 starter 时无预期编译影响；直接删除依赖会影响 <code>@DataPermission</code>、<code>DataPermissionUtils</code>、<code>DeptDataPermissionRuleCustomizer</code> 等 import。</td>
+        <td><span class="pill amber">中</span></td>
+        <td>执行 <code>mvn -pl infra-user/infra-user-server -am test</code> 或至少 <code>compile</code>。</td>
+      </tr>
+      <tr>
+        <td>当前 <code>infra-user-server</code> 查询结果</td>
+        <td>在运行时规则 <code>tableNames</code> 为空的前提下，SQL 结果集理论上不变；原拦截器只产生解析成本，不追加权限条件。</td>
+        <td><span class="pill green">低</span></td>
+        <td>对比员工、部门、角色、用户角色关系接口结果；重点校验 A/B 租户负样本。</td>
+      </tr>
+      <tr>
+        <td>数据权限安全</td>
+        <td>如果未来或其它服务启用了 <code>addDeptColumn</code> / <code>addUserColumn</code> / 自定义 <code>DataPermissionRule</code>，关闭拦截器会导致 DB 层部门/本人范围失效。</td>
+        <td><span class="pill red">高</span></td>
+        <td>启动时发现任何有效 <code>tableNames</code> 必须注册拦截器或启动失败。</td>
+      </tr>
+      <tr>
+        <td>注解语义</td>
+        <td><code>@DataPermission(enable = false)</code>、<code>DataPermissionUtils.executeIgnore(...)</code>、<code>@InterceptorIgnore(dataPermission = "true")</code> 在不注册拦截器时变成冗余语义。</td>
+        <td><span class="pill amber">中</span></td>
+        <td>保留注解并在文档/日志中说明“当前 no-op”，不要大范围清理历史注解。</td>
+      </tr>
+      <tr>
+        <td>租户隔离</td>
+        <td>不应受影响；租户隔离仍由 <code>TenantLineInnerInterceptor</code> 负责。</td>
+        <td><span class="pill amber">中</span></td>
+        <td>检查 MyBatis interceptor 链仍包含租户插件；采样最终 SQL 仍有 <code>tenant_id</code> 条件。</td>
+      </tr>
+      <tr>
+        <td>逻辑删除</td>
+        <td>不应受影响；逻辑删除来自 MyBatis-Plus 表元数据或 XML 显式条件。</td>
+        <td><span class="pill green">低</span></td>
+        <td>验证 <code>deleted=true</code> 数据不返回。</td>
+      </tr>
+      <tr>
+        <td>性能</td>
+        <td>可减少所有非必要 DataPermission 链路的 JSqlParser parse/cache get/put；但租户、分页等插件仍可能触发 JSqlParser，parse 不会归零。</td>
+        <td><span class="pill green">正向</span></td>
+        <td>对比 <code>DataPermissionInterceptor -> JsqlParserGlobal.parse</code> 调用量、CPU、接口 P95/P99。</td>
+      </tr>
+      <tr>
+        <td>其它模块</td>
+        <td><code>saas-crm</code> 存在少量 <code>@DataPermission(enable = false)</code>；<code>saas-inquiry-kernel</code>、<code>saas-inquiry-signature</code>、<code>saas-transmitter</code> 当前搜索未见直接使用。</td>
+        <td><span class="pill amber">低到中</span></td>
+        <td>不要把该配置默认下沉到公共依赖；每个启动服务单独检查运行时规则。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h4>6.2.5 验证与回滚</h4>
+    <div class="grid-2">
+      <div class="box info">
+        <strong>验证清单</strong>
+        <ul>
+          <li>启动日志列出所有 <code>DataPermissionRule</code> 及其 <code>tableNames</code>。</li>
+          <li><code>MybatisPlusInterceptor</code> 链中按配置确认有/无 <code>DataPermissionInterceptor</code>。</li>
+          <li>租户插件仍存在，目标 SQL 仍追加 <code>tenant_id</code>。</li>
+          <li>部门数据范围角色回归：全部、本部门、本部门及子部门、指定部门、仅本人。</li>
+          <li>Arthas 确认 DataPermission 下钻到 <code>JsqlParserGlobal.parse</code> 的调用量下降。</li>
+        </ul>
+      </div>
+      <div class="box danger">
+        <strong>回滚方式</strong>
+        <ul>
+          <li>将 <code>interceptor-mode</code> 切回 <code>on</code> 并重启实例。</li>
+          <li>或撤销自动配置排除，恢复 yudao 默认注册行为。</li>
+          <li>一旦发现有效规则被关闭、跨部门可见范围扩大、跨租户异常或 SQL 语义异常，立即回滚。</li>
+        </ul>
+      </div>
+    </div>
+
+    <h4>6.2.6 项目扫描结果：类似 Mapper default helper 的数量</h4>
+    <div class="box info">
+      <strong>扫描口径</strong>
+      本次扫描范围为 <code>/Users/caojialin/codes/xyy/inquiry</code> 下所有 <code>src/main/java/**/*Mapper.java</code>，排除 <code>target</code>。
+      “类似 <code>UserRoleMapper#getUserListByRoleIds</code>”分为两个口径：
+      <ul>
+        <li><strong>宽口径：</strong>Mapper 接口中的 Java <code>default</code> 方法，方法体调用 <code>selectList</code>、<code>selectPage</code>、<code>selectOne</code>、<code>selectCount</code>、<code>update</code>、<code>delete</code> 等 BaseMapper/BaseMapperX helper。若直接在这类 default 方法上添加 <code>@InterceptorIgnore(dataPermission = "true")</code>，可能与本次故障一样，注解不命中最终执行的 BaseMapper MappedStatement。</li>
+        <li><strong>严格口径：</strong>宽口径中属于 <code>SELECT</code> 且方法签名包含 <code>List</code>、<code>Set</code>、<code>Collection</code> 参数的 helper，通常更接近 <code>getUserListByRoleIds</code> 这类集合条件查询，也更容易形成多 SQL shape 与 JSqlParser cache churn。</li>
+      </ul>
+    </div>
+
+    <table>
+      <thead>
+      <tr>
+        <th>扫描项</th>
+        <th>数量</th>
+        <th>说明</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td><code>dal/mysql</code> Mapper Java 文件</td>
+        <td><strong>227</strong></td>
+        <td>全仓源码内的 MyBatis Mapper 接口。</td>
+      </tr>
+      <tr>
+        <td>宽口径 default helper 方法</td>
+        <td><strong>704</strong></td>
+        <td>其中 <code>SELECT</code> 类 636 个，<code>UPDATE/DELETE</code> 类 68 个。</td>
+      </tr>
+      <tr>
+        <td>严格口径集合参数 SELECT helper</td>
+        <td><strong>291</strong></td>
+        <td>其中 <code>selectList</code> 集合参数场景约 285 个，是最接近本次 <code>getUserListByRoleIds</code> 的候选集合。</td>
+      </tr>
+      <tr>
+        <td>已有 <code>@InterceptorIgnore(dataPermission = "true")</code></td>
+        <td><strong>1</strong></td>
+        <td>仅发现 <code>infra-user/.../UserRoleMapper#getUserListByRoleIds</code>。</td>
+      </tr>
+      <tr>
+        <td><code>@DataPermission</code> 注解使用</td>
+        <td><strong>13</strong></td>
+        <td>分布在 <code>infra-user</code> 及 <code>saas-crm</code>，均为 <code>enable = false</code> 场景。</td>
+      </tr>
+      <tr>
+        <td><code>DataPermissionUtils.executeIgnore</code></td>
+        <td><strong>1</strong></td>
+        <td>位于 <code>infra-user</code> 的 <code>AdminUserServiceImpl</code>。</td>
+      </tr>
+      <tr>
+        <td>当前工作区有效 <code>addDeptColumn/addUserColumn</code></td>
+        <td><strong>0</strong></td>
+        <td>仅发现注释示例，未发现启用中的部门/用户列配置。</td>
+      </tr>
+      <tr>
+        <td>当前工作区自定义 <code>DataPermissionRule</code></td>
+        <td><strong>0</strong></td>
+        <td>未发现业务侧 <code>implements DataPermissionRule</code>。</td>
+      </tr>
+      <tr>
+        <td>XML Mapper SQL 语句</td>
+        <td><strong>260</strong></td>
+        <td>80 个 XML mapper 文件，包含 159 个 select、31 个 update、57 个 delete、13 个 insert；这些已具备独立 mappedStatementId，但不代表可以批量忽略数据权限。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h4>6.2.7 按服务/模块分布</h4>
+    <table>
+      <thead>
+      <tr>
+        <th>服务或源码模块</th>
+        <th>宽口径 default helper</th>
+        <th>SELECT</th>
+        <th>UPDATE/DELETE</th>
+        <th>严格口径集合 SELECT</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr><td><code>infra-user-server</code></td><td>235</td><td>214</td><td>21</td><td><strong>108</strong></td></tr>
+      <tr><td><code>infra-product-server</code></td><td>61</td><td>56</td><td>5</td><td>27</td></tr>
+      <tr><td><code>infra-pay-server</code></td><td>69</td><td>53</td><td>16</td><td>22</td></tr>
+      <tr><td><code>saas-crm-server</code></td><td>105</td><td>94</td><td>11</td><td>39</td></tr>
+      <tr><td><code>saas-transmitter-server</code></td><td>22</td><td>21</td><td>1</td><td>8</td></tr>
+      <tr><td><code>saas-inquiry-kernel-all</code> / kernel 源码模块</td><td>195</td><td>182</td><td>13</td><td>84</td></tr>
+      <tr><td><code>saas-inquiry-signature-server</code></td><td>17</td><td>16</td><td>1</td><td>3</td></tr>
+      </tbody>
+    </table>
+
+    <div class="box warn">
+      <strong>对“逐个 Mapper 精确短路”的范围判断</strong>
+      如果按第一阶段方式逐个治理所有类似 default helper，宽口径需要评估 704 个方法；即使只治理严格口径，也有 291 个候选，单 <code>infra-user-server</code> 内就有 108 个。
+      每个方法都需要改成抽象 Mapper 方法、补 XML MappedStatement、保留逻辑删除/空集合 fail-closed、验证租户条件，并做结果集回归。
+      因此不建议把“逐个 XML 化 + <code>@InterceptorIgnore(dataPermission = "true")</code>”作为批量方案，只适合基于生产 TopN 热点逐个点杀。
+    </div>
+
+    <h4>6.2.8 直接禁用 DataPermissionInterceptor 的影响范围评估</h4>
+    <table>
+      <thead>
+      <tr>
+        <th>方案</th>
+        <th>改动范围</th>
+        <th>收益</th>
+        <th>主要风险</th>
+        <th>结论</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>继续逐个热点短路</td>
+        <td>每个热点 Mapper 方法单独改 Java + XML + 测试。</td>
+        <td>风险最可控，只影响选中的 mappedStatement。</td>
+        <td>候选数量大，治理成本高；只能减少被点杀 SQL 的 DataPermission parse。</td>
+        <td>适合第一阶段和后续 TopN 精准治理。</td>
+      </tr>
+      <tr>
+        <td>条件化禁用 <code>DataPermissionInterceptor</code></td>
+        <td>每个启动服务一处配置/本地自动配置；无需改 704 个 Mapper 方法。</td>
+        <td>一次性减少该服务所有无效 DataPermission parse/cache get/put。</td>
+        <td>必须证明运行时没有有效 <code>DataPermissionRule#tableNames</code>；未来启用规则时必须 fail-closed。</td>
+        <td><strong>推荐作为阶段间治理分支</strong>，但必须有启动保护。</td>
+      </tr>
+      <tr>
+        <td>无条件禁用 <code>DataPermissionInterceptor</code></td>
+        <td>全局影响所有 Mapper、XML 和 BaseMapper SQL。</td>
+        <td>性能收益最大、实施最简单。</td>
+        <td>一旦存在部门/本人数据权限规则，会导致所有 DB 层数据范围静默失效；注解语义也会误导维护者。</td>
+        <td><strong>不推荐</strong>。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <div class="box danger">
+      <strong>直接禁用的边界不是 291 或 704 个方法</strong>
+      <p>
+        <code>DataPermissionInterceptor</code> 是 MyBatis-Plus 全局 InnerInterceptor。关闭它后，影响面不是“类似 default helper”的候选数量，
+        而是该 JVM 内所有会经过 MyBatis-Plus 拦截器链的 <code>SELECT</code>、<code>UPDATE</code>、<code>DELETE</code>，包括 BaseMapper 自动 SQL、Mapper default helper、XML MappedStatement、以及依赖 jar 中被当前应用扫描到的 Mapper。
+      </p>
+      <p>
+        在当前工作区没有有效 <code>DataPermissionRule</code> 表配置的前提下，直接禁用预计主要改变性能，不改变结果集；但如果运行时加载了带有效表配置的 yudao/system 代码，或未来恢复 <code>addDeptColumn</code>、<code>addUserColumn</code>，则会变成跨部门/本人数据范围失效的安全问题。
+      </p>
+    </div>
+
+    <div class="box warn">
+      <strong>运行时差异提醒</strong>
+      当前工作区的 <code>infra-user</code> 数据权限配置中 <code>addDeptColumn/addUserColumn</code> 为注释状态；但本地 Maven 仓库中的 <code>yudao-module-system-2025.08-SNAPSHOT</code> 源码曾发现存在启用版配置。
+      因此不能只看源码扫描结论，必须在目标服务启动时打印实际加载的 <code>DataPermissionRule</code> 列表和 <code>tableNames</code>，并以运行时结果决定是否注册 <code>DataPermissionInterceptor</code>。
+    </div>
+
+    <h3>6.3 进入第二阶段的建议门槛</h3>
+    <div class="box purple">
+      <strong>满足以下任意组合，再进入第二阶段</strong>
+      <ul>
+        <li>第一阶段后 <code>JsqlParserGlobal.parse</code> avg-rt 仍显著高于新实例基线。</li>
+        <li>Arthas trace 显示慢调用仍集中在 <code>JsqlParseCache.getStatement()</code> 或缓存反序列化。</li>
+        <li>DataPermission 无效解析已明显下降，但 JSqlParser 线程仍是 CPU Top 热点。</li>
+        <li>剩余高频 mappedStatementId 无法通过第一阶段同类手段安全短路。</li>
+      </ul>
+    </div>
+
+    <h3>6.4 不进入第二阶段的情况</h3>
+    <ul>
+      <li>CPU 已恢复稳定，接口耗时满足目标。</li>
+      <li><code>parse</code> total / avg-rt 已回到新实例基线。</li>
+      <li>残余热点转移到业务逻辑、DB、RPC、GC 等非 JSqlParser 链路。</li>
+      <li>无法建立 JSqlParser cache 指标或无法稳定灰度对比。</li>
+    </ul>
+  </section>
+
+  <section id="stage2">
+    <h2>7. 第二阶段：JSqlParser 缓存可配置化</h2>
+
+    <div class="box warn">
+      <strong>阶段定位</strong>
+      第二阶段不是替代第一阶段，也不是盲目扩大缓存。它的目标是：在残余热点仍集中于 JSqlParser cache 时，将原先硬编码且不可观测的缓存改为可配置、可观测、可回滚的全局缓存策略。
+    </div>
+
+    <h3>7.1 推荐落点</h3>
+    <pre><code>infra-user/infra-user-server/src/main/java/com/xyy/saas/inquiry/user/server/config/mybatis/JsqlParserCacheProperties.java
+infra-user/infra-user-server/src/main/java/com/xyy/saas/inquiry/user/server/config/mybatis/JsqlParserCacheConfiguration.java</code></pre>
+
+    <p>选择服务侧配置类而不是改依赖源码的原因：</p>
+    <ul>
+      <li>本次故障服务是 <code>saas-inquiry-user-server</code>。</li>
+      <li>应用启动类已扫描 <code>com.xyy.saas.inquiry</code>。</li>
+      <li>不污染 MyBatis-Plus 或 yudao 依赖，便于升级和回滚。</li>
+    </ul>
+
+    <h3>7.2 配置项设计</h3>
+    <pre><code>inquiry:
+  mybatis-plus:
+    jsql-parser-cache:
+      mode: tuned       # legacy | tuned | off
+      maximum-weight: 64MB
+      expire-after-access: 10m
+      record-stats: true</code></pre>
+
+    <table>
+      <thead>
+      <tr>
+        <th>配置</th>
+        <th>含义</th>
+        <th>建议</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td><code>mode=legacy</code></td>
+        <td>恢复 yudao 默认风格：JDK 序列化 + 1024 条 + 5 秒 write TTL。</td>
+        <td>回滚使用。</td>
+      </tr>
+      <tr>
+        <td><code>mode=tuned</code></td>
+        <td>使用调优配置：JDK 序列化 + 权重上限 + 热点访问续期 + 统计。</td>
+        <td>第二阶段首选。</td>
+      </tr>
+      <tr>
+        <td><code>mode=off</code></td>
+        <td>关闭 JSqlParser parse cache，每次重新解析。</td>
+        <td>仅压测/紧急对比，不建议长期生产。</td>
+      </tr>
+      <tr>
+        <td><code>maximum-weight=64MB</code></td>
+        <td>以 SQL key + AST 序列化 byte[] 近似大小控制缓存，而不是单纯按条数。</td>
+        <td>首发 64MB，后续按 heap/GC 与命中率评估是否到 128MB。</td>
+      </tr>
+      <tr>
+        <td><code>expire-after-access=10m</code></td>
+        <td>热点 SQL 访问后续期，减少 5 秒固定过期造成的重复 parse。</td>
+        <td>首发 10 分钟。</td>
+      </tr>
+      <tr>
+        <td><code>record-stats=true</code></td>
+        <td>开启 Caffeine stats，支持命中率、miss、eviction 观测。</td>
+        <td>灰度必须开启。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h3>7.3 tuned 模式核心实现示意</h3>
+    <pre><code>Cache&lt;String, byte[]&gt; nativeCache = Caffeine.newBuilder()
+        .maximumWeight(properties.getMaximumWeight().toBytes())
+        .weigher((String key, byte[] value) -&gt; {
+            int keyWeight = key == null ? 0 : key.length() * Character.BYTES;
+            int valueWeight = value == null ? 0 : value.length;
+            return Math.max(1, keyWeight + valueWeight);
+        })
+        .expireAfterAccess(properties.getExpireAfterAccess())
+        .recordStats()
+        .build();
+
+JsqlParserGlobal.setJsqlParseCache(new JdkSerialCaffeineJsqlParseCache(nativeCache));</code></pre>
+
+    <h4>实现原则</h4>
+    <ul>
+      <li>首发仍使用 <code>JdkSerialCaffeineJsqlParseCache</code>，不同时引入 Fury/FST。</li>
+      <li>不要缓存原始 <code>Statement</code> 对象；序列化/反序列化本质上提供 AST 深拷贝，避免插件修改污染缓存对象。</li>
+      <li>配置类调用 <code>JsqlParserGlobal.setJsqlParseCache(...)</code> 后会覆盖 yudao 静态初始化的 legacy cache；必须确保在业务 SQL 执行前完成初始化。</li>
+      <li>必须保留 <code>nativeCache</code> 引用，用于注册 Micrometer 指标；不能只创建 <code>JdkSerialCaffeineJsqlParseCache</code> 后丢失原生 Caffeine cache。</li>
+      <li><code>maximum-weight</code> 只约束 SQL key + 序列化 byte[] 的近似权重，不等于 JVM 实际 heap 占用；灰度必须同时观察 allocation rate、Old Gen 和 GC pause。</li>
+      <li>不要做动态刷新；缓存策略调整后通过重启灰度实例生效。</li>
+      <li>启动日志必须打印最终生效的 cache mode、capacity/weight、TTL、stats 配置。</li>
+      <li>保留 <code>legacy</code> 和 <code>off</code> 作为回滚/对比开关。</li>
+    </ul>
+
+    <h3>7.4 指标设计</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>指标</th>
+        <th>说明</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td><code>jsqlparser.cache.estimated.size</code></td>
+        <td>当前缓存条目数。</td>
+      </tr>
+      <tr>
+        <td><code>jsqlparser.cache.hit.count</code></td>
+        <td>缓存命中次数。</td>
+      </tr>
+      <tr>
+        <td><code>jsqlparser.cache.miss.count</code></td>
+        <td>缓存未命中次数。</td>
+      </tr>
+      <tr>
+        <td><code>jsqlparser.cache.hit.rate</code></td>
+        <td>命中率。</td>
+      </tr>
+      <tr>
+        <td><code>jsqlparser.cache.eviction.count</code></td>
+        <td>缓存淘汰次数。</td>
+      </tr>
+      <tr>
+        <td><code>jsqlparser.cache.eviction.weight</code></td>
+        <td>淘汰权重，用于判断缓存容量是否过小或 key 过度发散。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <div class="box info">
+      <strong>指标注册要求</strong>
+      <code>JdkSerialCaffeineJsqlParseCache</code> 本身不直接暴露 Micrometer 指标。实现时应保留
+      <code>Cache&lt;String, byte[]&gt; nativeCache</code>，通过 <code>CaffeineCacheMetrics.monitor(...)</code> 或等价方式注册指标，
+      并在预发确认 hit/miss/eviction/estimatedSize 可真实查询。
+    </div>
+
+    <h3>7.5 A/B 对比矩阵</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>组别</th>
+        <th>配置</th>
+        <th>目的</th>
+        <th>是否推荐生产首发</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>A 基线</td>
+        <td>JDK + size 1024 + write TTL 5s</td>
+        <td>当前或 legacy 基线。</td>
+        <td>回滚基线</td>
+      </tr>
+      <tr>
+        <td>B Tuned-1</td>
+        <td>JDK + weight 64MB + access TTL 10m + stats</td>
+        <td>降低热点 SQL 反复过期和重复 parse。</td>
+        <td><strong>是</strong></td>
+      </tr>
+      <tr>
+        <td>C Off</td>
+        <td>关闭 JSqlParser cache</td>
+        <td>判断 JDK 反序列化是否比重新 parse 更贵。</td>
+        <td>否，仅压测/临时对比</td>
+      </tr>
+      <tr>
+        <td>D Fury</td>
+        <td>FurySerialCaffeineJsqlParseCache + 同等 cap/TTL</td>
+        <td>验证是否能降低序列化/反序列化 CPU。</td>
+        <td>否，后续单独验证</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <div class="box warn">
+      <strong>关于 Fury / FST</strong>
+      MyBatis-Plus 3.5.12 已提供 Fury/FST 相关缓存实现，但依赖是 optional。考虑 Java 21 兼容性、依赖引入和序列化行为变化，第二阶段首发不建议直接切换 Fury/FST。
+      如果 Tuned-1 后 <code>getStatement()</code> 仍是明确热点，再单独立项做预发 A/B。
+    </div>
+  </section>
+
+  <section id="stage2-check">
+    <h2>8. 第二阶段验证与灰度</h2>
+
+    <h3>8.1 第二阶段预发验证</h3>
+    <ol>
+      <li>启动后确认日志输出最终 JSqlParser cache mode 与参数。</li>
+      <li>确认 Micrometer / 日志可以看到 cache hit/miss/eviction/estimatedSize，且这些指标来自当前生效的 native Caffeine cache。</li>
+      <li>回放或压测高频权限查询链路。</li>
+      <li>在同等流量与同等数据集下，对比 legacy 与 tuned 的 <code>parse avg-rt</code>、慢 parse 数量、CPU、heap、allocation rate、GC。</li>
+      <li>执行第一阶段全部功能回归，确认 SQL 语义无变化。</li>
+    </ol>
+
+    <h3>8.2 第二阶段生产灰度</h3>
+    <div class="timeline">
+      <div class="step">
+        <h3>Step 1：单实例 tuned</h3>
+        <p>仅一个生产实例启用 <code>mode=tuned</code>，其它实例保持 legacy，便于横向对比。</p>
+      </div>
+      <div class="step">
+        <h3>Step 2：30 分钟启动稳定性观察</h3>
+        <p>确认无 SQL parse 异常、序列化异常、启动异常、内存快速增长。</p>
+      </div>
+      <div class="step">
+        <h3>Step 3：60 分钟正常流量观察</h3>
+        <p>观察 parse avg-rt、hit rate、eviction、CPU、P95/P99、Old GC。</p>
+      </div>
+      <div class="step">
+        <h3>Step 4：高峰验证后扩容</h3>
+        <p>覆盖一个业务高峰后，再按 30% / 50% / 全量推进。</p>
+      </div>
+    </div>
+
+    <h3>8.3 第二阶段验收标准</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>维度</th>
+        <th>目标</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>parse avg-rt</td>
+        <td>较 legacy 明显下降；目标接近新实例基线，或至少下降 30%。</td>
+      </tr>
+      <tr>
+        <td>慢 parse</td>
+        <td><code>#cost &gt; 1ms</code> 的数量明显下降。</td>
+      </tr>
+      <tr>
+        <td>CPU</td>
+        <td>JSqlParser 相关线程不再持续作为 Top 热点。</td>
+      </tr>
+      <tr>
+        <td>Cache</td>
+        <td>hit rate 稳定，eviction 不持续高速增长，native cache 指标与启动日志中的 mode/参数一致。</td>
+      </tr>
+      <tr>
+        <td>Heap / GC</td>
+        <td>Old Gen、Full GC、GC pause、allocation rate 无明显恶化。</td>
+      </tr>
+      <tr>
+        <td>业务语义</td>
+        <td>租户隔离、逻辑删除、数据权限回归全部通过。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h3>8.4 第二阶段调参规则</h3>
+    <ul>
+      <li>如果 hit rate 低、eviction 高、heap 稳定，可从 <code>64MB / 10m</code> 小步调整到 <code>128MB / 30m</code>。</li>
+      <li>如果 hit rate 高但 <code>getStatement()</code> 仍慢，不要继续盲目加容量，应评估序列化实现或继续减少 parse 入口。</li>
+      <li>如果 heap / GC 变差，立即降回 <code>64MB</code> 或 <code>legacy</code>。</li>
+      <li>如果 SQL key 基数过高，应优先治理 SQL 生成方式和 IN 列表规模，而不是无限加缓存。</li>
+    </ul>
+  </section>
+
+  <section id="rollback">
+    <h2>9. 回滚策略</h2>
+
+    <h3>9.1 第一阶段回滚</h3>
+    <div class="box danger">
+      <strong>触发条件</strong>
+      跨租户数据返回、deleted=true 关系返回、部门/本人数据范围扩大、BindingException、Invalid bound statement、XML 加载异常、DB 慢 SQL 或扫描行数异常、CPU 无改善且出现新瓶颈。
+    </div>
+
+    <p>回滚要求：</p>
+    <ul>
+      <li>必须整体回滚 Java Mapper 与 XML，不能只回滚 Java 或只回滚 XML。</li>
+      <li>不得通过 <code>@TenantIgnore</code>、<code>tenantLine = "true"</code>、租户 ignore-tables 或全局关闭数据权限来止血。</li>
+      <li>回滚后重启或替换实例，清理本地 JSqlParser parse cache 与类加载状态。</li>
+    </ul>
+
+    <h3>9.2 第二阶段回滚</h3>
+    <p>通过配置切回 legacy，并重启实例：</p>
+    <pre><code>inquiry:
+  mybatis-plus:
+    jsql-parser-cache:
+      mode: legacy</code></pre>
+
+    <p>紧急对比或缓存疑似异常时，可临时关闭缓存：</p>
+    <pre><code>inquiry:
+  mybatis-plus:
+    jsql-parser-cache:
+      mode: off</code></pre>
+
+    <div class="box warn">
+      <strong>注意</strong>
+      <code>mode=off</code> 可能导致每次 SQL 都重新 parse，CPU 反而上升，只能作为短期压测或故障定位手段，不建议长期生产使用。
+    </div>
+  </section>
+
+  <section id="appendix">
+    <h2>10. 附录：命令与检查清单</h2>
+
+    <h3>10.1 静态搜索命令</h3>
+    <pre><code># 只检查本次变更是否新增高风险租户绕过；全仓 grep 会命中大量既有代码，不适合作为门禁
+git diff -- infra-user | rg '@TenantIgnore|tenantLine\s*=\s*"true"|TenantUtils\.executeIgnore' || true
+
+# 检查 UserRoleMapper 改造点
+git diff -- infra-user/infra-user-server/src/main/java/cn/iocoder/yudao/module/system/dal/mysql/permission/UserRoleMapper.java \
+  infra-user/infra-user-server/src/main/resources/mapper/permission/UserRoleMapper.xml
+
+# 只检查配置变更中是否新增高风险表到租户 ignore-tables
+git diff -- infra-user/infra-user-server/src/main/resources/application*.yml \
+  | rg 'system_user_role|system_tenant_user_relation' || true</code></pre>
+
+    <h3>10.2 Arthas 观察命令</h3>
+    <pre><code># DataPermissionInterceptor 中的 mappedStatementId TopN 采样
+watch com.baomidou.mybatisplus.extension.plugins.inner.DataPermissionInterceptor beforeQuery '{params[1].id}' -x 1 -n 100
+
+# 确认目标 MappedStatement 的 dataPermission ignore 生效
+ognl -c &lt;classLoaderHash&gt; '@com.baomidou.mybatisplus.core.plugins.InterceptorIgnoreHelper@willIgnoreDataPermission("cn.iocoder.yudao.module.system.dal.mysql.permission.UserRoleMapper.getUserListByRoleIds")'
+
+# 追踪目标 DataPermissionInterceptor 调用，确认命中后不再下钻到 JsqlParserGlobal.parse
+trace com.baomidou.mybatisplus.extension.plugins.inner.DataPermissionInterceptor beforeQuery 'params[1].id=="cn.iocoder.yudao.module.system.dal.mysql.permission.UserRoleMapper.getUserListByRoleIds"' -n 20
+
+# JSqlParser parse 总量与平均耗时；第一阶段不要求 parse 归零，租户插件仍可能解析 SQL
+monitor com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal parse -c 5
+
+# 慢 parse 链路
+trace com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal parse '#cost &gt; 1' -n 20
+
+# 缓存慢调用
+trace com.baomidou.mybatisplus.extension.parser.cache.AbstractCaffeineJsqlParseCache get '#cost &gt; 1' -n 20</code></pre>
+
+    <h3>10.3 最终发布 Checklist</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>类别</th>
+        <th>检查项</th>
+        <th>状态</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr><td>第一阶段</td><td>Mapper 抽象方法 + <code>@InterceptorIgnore(dataPermission = "true")</code></td><td>□</td></tr>
+      <tr><td>第一阶段</td><td>XML namespace/id/参数名匹配</td><td>□</td></tr>
+      <tr><td>第一阶段</td><td>XML 包含逻辑删除与空集合 fail-closed</td><td>□</td></tr>
+      <tr><td>第一阶段</td><td>无 <code>@TenantIgnore</code> / <code>tenantLine = "true"</code> / ignore-tables</td><td>□</td></tr>
+      <tr><td>第一阶段</td><td>A/B 租户负样本通过</td><td>□</td></tr>
+      <tr><td>第一阶段</td><td>最终 SQL 仍包含租户条件</td><td>□</td></tr>
+      <tr><td>第一阶段</td><td><code>InterceptorIgnoreHelper.willIgnoreDataPermission</code> 对目标 mappedStatement 返回 true</td><td>□</td></tr>
+      <tr><td>第一阶段</td><td>目标 DataPermission trace 未下钻到 <code>JsqlParserGlobal.parse</code></td><td>□</td></tr>
+      <tr><td>第一阶段</td><td><code>system_user_role</code> 执行计划、慢 SQL、扫描行数无异常</td><td>□</td></tr>
+      <tr><td>阶段间</td><td>已收集残余从 DataPermission 下钻到 parse 的 mappedStatementId TopN</td><td>□</td></tr>
+      <tr><td>阶段间</td><td>已确认生产运行时 DataPermission 规则和 tableNames</td><td>□</td></tr>
+      <tr><td>阶段间</td><td>确认是否需要进入第二阶段</td><td>□</td></tr>
+      <tr><td>第二阶段</td><td>cache mode 可配置，legacy 可回滚</td><td>□</td></tr>
+      <tr><td>第二阶段</td><td>cache stats 可观测</td><td>□</td></tr>
+      <tr><td>第二阶段</td><td>单实例灰度完成并通过 CPU / GC / SQL 语义验收</td><td>□</td></tr>
+      </tbody>
+    </table>
+
+    <div class="box ok">
+      <strong>一句话总结</strong>
+      第一阶段解决“本不该进入数据权限解析的高频 SQL”；第二阶段只在残余热点明确时，解决“已经进入 JSqlParser 后的缓存成本”。
+      优先顺序不能反过来。
+    </div>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>问诊基础服务 CPU 优化改造方案报告</title>
+  <style>
+    :root {
+      --bg: #f4f7fa;
+      --paper: #ffffff;
+      --ink: #1f2937;
+      --muted: #64748b;
+      --line: #d8e0ea;
+      --blue: #155e9f;
+      --blue-soft: #e8f2fb;
+      --red: #b42318;
+      --red-soft: #fff1f0;
+      --amber: #a15c07;
+      --amber-soft: #fff7e6;
+      --green: #047857;
+      --green-soft: #ecfdf5;
+      --purple: #6d28d9;
+      --purple-soft: #f3e8ff;
+      --code-bg: #f8fafc;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      line-height: 1.66;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    header {
+      padding: 30px 34px;
+      margin-bottom: 18px;
+    }
+
+    section {
+      padding: 24px 28px;
+      margin-top: 16px;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: 12px;
+      font-size: 30px;
+      line-height: 1.25;
+    }
+
+    h2 {
+      margin-bottom: 14px;
+      font-size: 22px;
+      line-height: 1.35;
+    }
+
+    h3 {
+      margin: 20px 0 10px;
+      font-size: 17px;
+    }
+
+    p { margin-bottom: 12px; }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+      border-bottom: 1px dashed rgba(21, 94, 159, 0.35);
+    }
+
+    a:hover { border-bottom-style: solid; }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .meta div, .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 13px 15px;
+    }
+
+    .meta span, .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .meta strong, .metric strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--ink);
+      font-size: 15px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .metric strong {
+      color: var(--blue);
+      font-size: 22px;
+      line-height: 1.2;
+    }
+
+    .callout {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 14px 16px;
+    }
+
+    .callout.danger { border-color: #fecaca; background: var(--red-soft); }
+    .callout.warn { border-color: #fed7aa; background: var(--amber-soft); }
+    .callout.ok { border-color: #bbf7d0; background: var(--green-soft); }
+    .callout.info { border-color: #bfdbfe; background: var(--blue-soft); }
+    .callout.purple { border-color: #ddd6fe; background: var(--purple-soft); }
+
+    .tag {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .tag.red { color: var(--red); background: var(--red-soft); }
+    .tag.amber { color: var(--amber); background: var(--amber-soft); }
+    .tag.green { color: var(--green); background: var(--green-soft); }
+    .tag.purple { color: var(--purple); background: var(--purple-soft); }
+
+    table {
+      width: 100%;
+      margin-top: 12px;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f8fafc;
+      color: #334155;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: var(--code-bg);
+      font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+      font-size: 0.94em;
+    }
+
+    pre {
+      overflow-x: auto;
+      margin: 12px 0 0;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--code-bg);
+      font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    ul, ol {
+      margin: 8px 0 0 22px;
+      padding: 0;
+    }
+
+    li { margin: 7px 0; }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .path {
+      word-break: break-all;
+      font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+      font-size: 13px;
+    }
+
+    .risk-high { color: var(--red); font-weight: 700; }
+    .risk-mid { color: var(--amber); font-weight: 700; }
+    .risk-low { color: var(--green); font-weight: 700; }
+
+    @media (max-width: 900px) {
+      main { width: min(100% - 20px, 1180px); padding-top: 16px; }
+      header, section { padding: 20px 16px; }
+      .meta, .grid-2, .grid-3, .metrics { grid-template-columns: 1fr; }
+      h1 { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>问诊基础服务 CPU 优化改造方案报告</h1>
+    <p>
+      本报告基于 <a href="故障调查报告.html">2026-05-29 问诊基础服务 CPU 故障调查报告</a> 与当前代码整理，
+      目标是在不破坏租户隔离、逻辑删除和业务数据范围的前提下，减少高频无效进入 MyBatis-Plus 数据权限 SQL 解析链路的次数。
+    </p>
+    <div class="meta">
+      <div>
+        <span>服务</span>
+        <strong>saas-inquiry-user-server</strong>
+      </div>
+      <div>
+        <span>主要热点</span>
+        <strong>DataPermission + JSqlParser</strong>
+      </div>
+      <div>
+        <span>首批改造对象</span>
+        <strong>UserRoleMapper.getUserListByRoleIds</strong>
+      </div>
+      <div>
+        <span>报告日期</span>
+        <strong>2026-05-30</strong>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <h2>一、执行摘要</h2>
+    <div class="grid-2">
+      <div class="callout danger">
+        <p>
+          <span class="tag red">故障根因</span>
+          线上 CPU 突刺发生在 <code>DataPermissionInterceptor -> JsqlParserGlobal.parse -> JsqlParseCache.getStatement</code> 链路。
+          旧实例与新实例请求量、SQL 长度接近，但旧实例单次解析缓存访问成本更高。
+        </p>
+      </div>
+      <div class="callout ok">
+        <p>
+          <span class="tag green">改造方向</span>
+          先减少无必要的数据权限 SQL 解析，再评估 JSqlParser 缓存和业务缓存。
+          第一阶段只针对 <code>system_user_role</code> 用户-角色关系查询做局部短路。
+        </p>
+      </div>
+    </div>
+
+    <div class="metrics">
+      <div class="metric">
+        <span>首批目标 SQL</span>
+        <strong>1 条</strong>
+      </div>
+      <div class="metric">
+        <span>改造风险等级</span>
+        <strong>中高</strong>
+      </div>
+      <div class="metric">
+        <span>必须保留</span>
+        <strong>租户隔离</strong>
+      </div>
+      <div class="metric">
+        <span>必须验证</span>
+        <strong>SQL 语义</strong>
+      </div>
+    </div>
+
+    <p style="margin-top: 14px;">
+      本方案不是通用的“关闭数据权限”方案，而是<strong>只绕过 <code>UserRoleMapper.getUserListByRoleIds</code> 这一条角色关系查询的
+      <code>DataPermissionInterceptor</code> 解析</strong>。租户插件 <code>tenantLine</code>、逻辑删除条件和下游员工可见性过滤必须保持原有语义。
+    </p>
+  </section>
+
+  <section>
+    <h2>二、现状与代码证据</h2>
+    <h3>1. 故障报告中的热点链路</h3>
+    <pre>DubboServerHandler
+FutureTask.get
+CCJSqlParserUtil.parseStatement
+JsqlParserGlobal.parse
+DataPermissionInterceptor.beforeQuery
+UserRoleMapper.getUserListByRoleIds
+PermissionServiceImpl.getUserListByRoleIds
+AdminUserApiImpl.getUserListByRoleCodes</pre>
+
+    <h3>2. 当前首批热点方法是 default helper</h3>
+    <p>
+      当前 <code>getUserListByRoleIds</code> 不是明确的 MyBatis mapped statement，而是 Java default 方法，内部委托 BaseMapper 的
+      <code>selectList</code>。
+    </p>
+    <pre>// infra-system/infra-user/infra-user-server/src/main/java/cn/iocoder/yudao/module/system/dal/mysql/permission/UserRoleMapper.java
+
+default List&lt;UserRoleDO&gt; getUserListByRoleIds(Set&lt;Long&gt; roleIds) {
+    return selectList(UserRoleDO::getRoleId, roleIds);
+}</pre>
+    <p class="small">
+      风险点：如果只在该 default 方法上加 <code>@InterceptorIgnore(dataPermission = "true")</code>，运行时真正执行的 MappedStatement
+      仍可能是 BaseMapper 注入的 <code>selectList</code>，注解无法稳定命中热点 SQL。
+    </p>
+
+    <h3>3. 调用链</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>代码位置</th>
+        <th>职责</th>
+        <th>改造判断</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td class="path">infra-system/.../api/user/AdminUserApiImpl.java#getUserListByRoleCodes</td>
+        <td>Dubbo/API 层入口，委托 <code>AdminUserServiceImpl.getUserListByRoleCodes</code>。</td>
+        <td>不是 SQL mapped statement，不应在这里加 <code>@InterceptorIgnore</code>。</td>
+      </tr>
+      <tr>
+        <td class="path">infra-system/.../api/user/AdminUserApiImpl.java#getCrmUserRoleIdListByRoleIds</td>
+        <td>通过 role code 查询 role，再通过 <code>PermissionServiceImpl.getUserListByRoleIds</code> 获取 userId。</td>
+        <td>调用场景需确认是否只需要当前租户角色成员。</td>
+      </tr>
+      <tr>
+        <td class="path">infra-system/.../service/user/AdminUserServiceImpl.java#getUserListByRoleCodes</td>
+        <td>普通按角色查询可用用户：roleCodes -> roleIds -> userRole -> tenant available users。</td>
+        <td>可享受首批 mapper 短路收益，但不能替代最终用户状态/租户员工关系过滤。</td>
+      </tr>
+      <tr>
+        <td class="path">infra-system/.../service/user/AdminUserServiceImpl.java#getUserListByRoleCodes_Permission</td>
+        <td>带当前登录人部门/本人数据范围过滤。</td>
+        <td>不能简化为“按角色查用户都忽略数据权限”。</td>
+      </tr>
+      <tr>
+        <td class="path">infra-system/.../service/permission/PermissionServiceImpl.java#getUserListByRoleIds</td>
+        <td>调用 <code>UserRoleMapper.getUserListByRoleIds</code> 并转换为 <code>UserRoleVO</code>。</td>
+        <td>保留空集合直接返回空列表。</td>
+      </tr>
+      <tr>
+        <td class="path">infra-system/.../dal/mysql/permission/UserRoleMapper.java#getUserListByRoleIds</td>
+        <td>查询 <code>system_user_role</code> 用户-角色关系。</td>
+        <td>首批唯一建议落点。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h3>4. 数据权限规则现状</h3>
+    <pre>// infra-system/.../framework/datapermission/config/DataPermissionConfiguration.java
+@Bean
+public DeptDataPermissionRuleCustomizer sysDeptDataPermissionRuleCustomizer() {
+    return rule -> {
+        // rule.addDeptColumn(AdminUserDO.class);
+        // rule.addDeptColumn(DeptDO.class, "id");
+        // rule.addUserColumn(AdminUserDO.class, "id");
+    };
+}</pre>
+    <p>
+      当前源码中没有看到 <code>system_user_role</code> 的数据权限规则，因此 <code>system_user_role</code> 进入
+      <code>DataPermissionInterceptor</code> 后大概率属于无效解析。但上线前必须以生产运行时加载的配置为准。
+    </p>
+  </section>
+
+  <section>
+    <h2>三、改造目标与非目标</h2>
+    <div class="grid-2">
+      <div class="callout ok">
+        <p><span class="tag green">目标</span></p>
+        <ul>
+          <li>减少 <code>UserRoleMapper.getUserListByRoleIds</code> 进入 <code>DataPermissionInterceptor</code> 后的 JSqlParser 解析成本。</li>
+          <li>保留 <code>system_user_role.deleted = false</code> 逻辑删除语义。</li>
+          <li>保留 <code>tenantLine</code> 租户隔离语义。</li>
+          <li>让 <code>@InterceptorIgnore(dataPermission = "true")</code> 稳定挂到最终 MappedStatement。</li>
+          <li>通过灰度和 Arthas/JFR 观测确认 CPU 热点下降。</li>
+        </ul>
+      </div>
+      <div class="callout danger">
+        <p><span class="tag red">非目标 / 禁止项</span></p>
+        <ul>
+          <li>不是关闭全局数据权限。</li>
+          <li>不是忽略租户插件，不允许添加 <code>@TenantIgnore</code>。</li>
+          <li>不允许添加 <code>@InterceptorIgnore(tenantLine = "true")</code>；这里的 <code>true</code> 表示“忽略 tenantLine”。</li>
+          <li>不改 <code>AdminUserMapper.getTenantAvailableUserList</code>。</li>
+          <li>不对 <code>system_users</code> 或员工列表类 SQL 做 blanket ignore。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>四、第一阶段推荐改造方案</h2>
+    <h3>1. 改造 UserRoleMapper：default 方法改成明确 mapped statement</h3>
+    <p>
+      建议保留方法名 <code>getUserListByRoleIds</code>，删除 default 方法体，改成 MyBatis mapper 抽象方法，并只添加
+      <code>@InterceptorIgnore(dataPermission = "true")</code>。
+    </p>
+    <pre>import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
+
+@InterceptorIgnore(dataPermission = "true")
+List&lt;UserRoleDO&gt; getUserListByRoleIds(@Param("roleIds") Set&lt;Long&gt; roleIds);</pre>
+
+    <h3>2. 改造 UserRoleMapper.xml：新增同名 select</h3>
+    <p>
+      XML 的 <code>namespace</code> 必须保持：
+      <code>cn.iocoder.yudao.module.system.dal.mysql.permission.UserRoleMapper</code>。
+      <code>select id</code> 必须与 Java 方法名完全一致。
+    </p>
+    <pre>&lt;select id="getUserListByRoleIds"
+        resultType="cn.iocoder.yudao.module.system.dal.dataobject.permission.UserRoleDO"&gt;
+  select *
+  from system_user_role
+  &lt;where&gt;
+    deleted = false
+    &lt;choose&gt;
+      &lt;when test="roleIds != null and roleIds.size() &gt; 0"&gt;
+        and role_id in
+        &lt;foreach collection="roleIds" open="(" item="id" separator="," close=")"&gt;
+          #{id}
+        &lt;/foreach&gt;
+      &lt;/when&gt;
+      &lt;otherwise&gt;
+        and 1 = 0
+      &lt;/otherwise&gt;
+    &lt;/choose&gt;
+  &lt;/where&gt;
+&lt;/select&gt;</pre>
+
+    <div class="callout warn">
+      <p>
+        <span class="tag amber">注意</span>
+        上述 SQL 显式写 <code>deleted = false</code>，租户条件不在 XML 中手写，继续交由 <code>TenantLineInnerInterceptor</code> 追加。
+        如果线上发现 tenantLine 未对该 SQL 追加租户条件，则必须暂停发布并先修正租户插件配置，不能通过 <code>@TenantIgnore</code> 规避。
+      </p>
+    </div>
+
+    <h3>3. PermissionServiceImpl 保持空集合保护</h3>
+    <p>
+      当前 <code>PermissionServiceImpl.getUserListByRoleIds</code> 已有空集合直接返回空列表逻辑，应保留。
+    </p>
+    <pre>public List&lt;UserRoleVO&gt; getUserListByRoleIds(Set&lt;Long&gt; roleIds) {
+    if (CollUtil.isEmpty(roleIds)) {
+        return new ArrayList&lt;&gt;();
+    }
+    List&lt;UserRoleDO&gt; userListByRoleIds = userRoleMapper.getUserListByRoleIds(roleIds);
+    return UserRoleConvert.INSTANCE.convertVo(userListByRoleIds);
+}</pre>
+
+    <h3>4. 为什么不用“新方法名”作为首选</h3>
+    <p>
+      也可以新增 <code>selectListByRoleIdsIgnoreDataPermission</code> 并修改 service 调用，但首选保持
+      <code>getUserListByRoleIds</code> 的原因是：
+    </p>
+    <ul>
+      <li>调用方无需改动，变更面更小。</li>
+      <li>Arthas 观测中的 mappedStatementId 更容易与故障报告中的热点链路对应。</li>
+      <li>只需确保 default 方法体删除，XML id 与 Java 方法一一匹配。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>五、改造后链路变化</h2>
+    <div class="grid-2">
+      <div class="callout warn">
+        <p><span class="tag amber">改造前</span></p>
+        <pre>PermissionServiceImpl.getUserListByRoleIds
+  -> UserRoleMapper default getUserListByRoleIds
+  -> BaseMapper selectList
+  -> DataPermissionInterceptor.beforeQuery
+  -> JsqlParserGlobal.parse
+  -> JsqlParseCache.getStatement</pre>
+      </div>
+      <div class="callout ok">
+        <p><span class="tag green">改造后</span></p>
+        <pre>PermissionServiceImpl.getUserListByRoleIds
+  -> UserRoleMapper.getUserListByRoleIds MappedStatement
+  -> @InterceptorIgnore(dataPermission = "true") 命中
+  -> 跳过 DataPermissionInterceptor SQL 解析
+  -> tenantLine 仍保持租户隔离</pre>
+      </div>
+    </div>
+    <p class="small" style="margin-top: 12px;">
+      性能边界：本方案绕过的是该 MappedStatement 的数据权限解析，不承诺完全不走 JSqlParser。租户插件仍可能解析 SQL，
+      因此验收目标是 <code>DataPermissionInterceptor</code> 相关解析栈显著下降，而不是 JSqlParser CPU 归零。
+    </p>
+  </section>
+
+  <section>
+    <h2>六、风险评估与规避措施</h2>
+    <table>
+      <thead>
+      <tr>
+        <th>风险类别</th>
+        <th>等级</th>
+        <th>风险说明</th>
+        <th>规避措施</th>
+        <th>验证方式</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>MappedStatement 未命中</td>
+        <td class="risk-high">高</td>
+        <td>如果仍保留 default 方法，或 XML id/namespace/参数名不一致，注解可能作用不到真正执行的 SQL，CPU 不下降，甚至出现 BindingException。</td>
+        <td>删除 default 方法体；Java 方法改抽象；XML <code>id="getUserListByRoleIds"</code>；参数统一 <code>@Param("roleIds")</code> 与 <code>foreach collection="roleIds"</code>。</td>
+        <td>启动时确认 MyBatis 存在该 statement；日志/Arthas 观察 mappedStatementId 是 <code>UserRoleMapper.getUserListByRoleIds</code> 而非 BaseMapper selectList。</td>
+      </tr>
+      <tr>
+        <td>租户隔离绕过</td>
+        <td class="risk-high">高</td>
+        <td>误加 <code>@TenantIgnore</code>、<code>tenantLine = "true"</code> 或把 <code>system_user_role</code> 加入 ignore-tables，会导致跨租户角色关系混入。</td>
+        <td>只允许 <code>@InterceptorIgnore(dataPermission = "true")</code>；禁止改租户配置；禁止 <code>TenantUtils.executeIgnore</code> 包裹该查询。</td>
+        <td>SQL/BoundSql 抽样确认 <code>system_user_role</code> 最终 SQL 含当前租户条件；A/B 租户同 roleId/roleCode 负样本互不可见。</td>
+      </tr>
+      <tr>
+        <td>逻辑删除失效</td>
+        <td class="risk-high">高</td>
+        <td>从 BaseMapper 切到 XML 后，手写 XML 不会自动继承原 LambdaQueryWrapper 的逻辑删除条件，可能返回已删除角色关系。</td>
+        <td>XML 固定写 <code>deleted = false</code> 或 <code>deleted = 0</code>，作为不可删除条件。</td>
+        <td>构造 <code>deleted=true</code> 的 <code>system_user_role</code> 数据，调用后不得返回；SQL 日志能看到 deleted 条件。</td>
+      </tr>
+      <tr>
+        <td>空集合退化为全量查询</td>
+        <td class="risk-high">高</td>
+        <td>如果 XML 只在 roleIds 非空时拼接 <code>role_id in</code>，空集合可能退化为当前租户全部角色关系。</td>
+        <td>Service 层继续空集合返回空；XML 层 <code>otherwise and 1 = 0</code> fail-closed 双保险。</td>
+        <td>Mapper 级测试传 null、空 Set，必须返回空或受控异常，不能扫描全量。</td>
+      </tr>
+      <tr>
+        <td>数据范围误解</td>
+        <td class="risk-high">高</td>
+        <td><code>getUserListByRoleIds</code> 返回的是用户-角色关系中间结果，不是当前登录人最终可见员工集合。若调用方直接返回，可能绕过部门/本人数据范围。</td>
+        <td>报告和代码注释明确该方法只返回当前租户角色成员关系；需要部门/本人过滤的场景必须走 <code>getUserListByRoleCodes_Permission</code> 或显式过滤。</td>
+        <td>对普通链路和 <code>_Permission</code> 链路分别做回归，验证部门受限账号看不到越权部门用户。</td>
+      </tr>
+      <tr>
+        <td>下游员工列表被误改</td>
+        <td class="risk-high">高</td>
+        <td><code>AdminUserMapper.getTenantAvailableUserList</code> 查询 <code>system_users</code> 与 <code>system_tenant_user_relation</code>，员工租户隔离依赖 relation 表租户条件。若给该方法 blanket ignore，可能跨租户混入员工。</td>
+        <td>第一阶段不改 <code>AdminUserMapper</code> 与 <code>getTenantAvailableUserList</code>；未来如需优化必须另立方案。</td>
+        <td>静态扫描确认该 mapper 未新增 <code>@TenantIgnore</code> 或 <code>tenantLine=true</code>；最终 SQL 对 relation 表仍含租户条件。</td>
+      </tr>
+      <tr>
+        <td>租户上下文缺失</td>
+        <td class="risk-high">高</td>
+        <td>Dubbo、异步、BPM 或定时任务如果没有正确传递 <code>TenantContextHolder</code>，租户插件可能无法追加正确租户条件。</td>
+        <td>无租户上下文入口必须显式指定租户或 fail-closed，不能用 <code>@TenantIgnore</code> 修复空结果。</td>
+        <td>覆盖 HTTP、Dubbo、BPM/异步入口，日志确认 tenantId 非空且返回行租户一致。</td>
+      </tr>
+      <tr>
+        <td>性能预期过度</td>
+        <td class="risk-mid">中</td>
+        <td>改造只绕过数据权限解析，tenantLine 仍可能解析 SQL；roleIds 数量不同会形成不同 SQL 形态和缓存 key。</td>
+        <td>目标表述为降低 DataPermission 解析成本；统计 roleIds size 分布，必要时限制单次数量或分批。</td>
+        <td>JFR/async-profiler 对比 DataPermission 栈下降；同时观察 tenantLine 残余解析、GC 分配和接口 P99。</td>
+      </tr>
+      <tr>
+        <td>数据库负载转移</td>
+        <td class="risk-mid">中</td>
+        <td>应用 CPU 下降后，若 SQL 条件或索引不足，压力可能转移到数据库。</td>
+        <td>确认 SQL 包含 <code>role_id in</code>、<code>deleted=false</code>、租户条件；检查 <code>system_user_role</code> 索引。</td>
+        <td>预发执行 explain；线上观察慢 SQL、rows examined、DB span。</td>
+      </tr>
+      <tr>
+        <td>灰度混部误判</td>
+        <td class="risk-mid">中</td>
+        <td>新旧实例并存时，旧实例仍走旧解析路径；Redis 缓存也可能导致验证请求不触发目标 mapper。</td>
+        <td>按实例版本、commit、pod、mappedStatementId 维度观测；验证时固定路由或构造首次查询。</td>
+        <td>灰度期间分别抽样新旧实例 SQL 和 CPU 栈；全量替换后再下最终结论。</td>
+      </tr>
+      <tr>
+        <td>回滚不完整</td>
+        <td class="risk-high">高</td>
+        <td>只回滚 Java 或只回滚 XML 会导致接口和 mapper 不匹配；用扩大 ignore 止血会带来越权。</td>
+        <td>只允许整体回退上一版本制品或关闭该精确 mapper 路径；禁止全局关闭数据权限/租户插件。</td>
+        <td>回滚后确认版本一致、启动无 mapper 错误，并重测跨租户、deleted、部门/本人权限。</td>
+      </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>七、上线验证方案</h2>
+    <h3>1. 发布前静态门禁</h3>
+    <ul>
+      <li><code>UserRoleMapper.getUserListByRoleIds</code> 已从 default 方法改为抽象 mapper 方法。</li>
+      <li>方法上只出现 <code>@InterceptorIgnore(dataPermission = "true")</code>。</li>
+      <li>没有新增 <code>@TenantIgnore</code>。</li>
+      <li>没有新增 <code>@InterceptorIgnore(tenantLine = "true")</code>。</li>
+      <li><code>UserRoleMapper.xml</code> namespace 与 Java 接口一致。</li>
+      <li>XML <code>select id</code> 与方法名一致。</li>
+      <li>XML 显式包含 <code>deleted = false</code> 或 <code>deleted = 0</code>。</li>
+      <li>XML 对空 <code>roleIds</code> fail-closed。</li>
+      <li><code>AdminUserMapper.getTenantAvailableUserList</code> 未改。</li>
+      <li><code>application*.yml</code> 未新增 <code>system_user_role</code>、<code>system_tenant_user_relation</code> 到租户 ignore-tables。</li>
+    </ul>
+
+    <h3>2. 功能回归用例</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>用例</th>
+        <th>期望</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>当前租户、正常 roleIds</td>
+        <td>新旧查询结果一致。</td>
+      </tr>
+      <tr>
+        <td>roleIds 为 null / 空集合</td>
+        <td>返回空，不允许返回当前租户全量角色关系。</td>
+      </tr>
+      <tr>
+        <td>存在 deleted=true 的用户角色关系</td>
+        <td>不得返回 deleted=true 数据。</td>
+      </tr>
+      <tr>
+        <td>A/B 两个租户存在相同 roleId 或 roleCode 语义</td>
+        <td>A 租户请求不得返回 B 租户关系。</td>
+      </tr>
+      <tr>
+        <td>普通 <code>getUserListByRoleCodes</code> 链路</td>
+        <td>返回当前租户可用用户，用户状态和租户员工关系过滤保持不变。</td>
+      </tr>
+      <tr>
+        <td><code>getUserListByRoleCodes_Permission</code> 链路</td>
+        <td>继续按当前登录人部门/本人数据范围过滤。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <h3>3. Arthas / 线上观测命令</h3>
+    <pre># 观察 parse 调用量和平均耗时
+monitor com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal parse -c 5
+
+# 只追踪慢 parse
+trace com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal parse '#cost &gt; 1' -n 20
+
+# 观察进入数据权限拦截器的 mappedStatementId
+watch com.baomidou.mybatisplus.extension.plugins.inner.DataPermissionInterceptor beforeQuery '{params[1].id}' -x 1 -n 50
+
+# 查看 JSqlParser 缓存对象
+sc -d com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal
+ognl -c &lt;classLoaderHash&gt; '@com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal@jsqlParseCache'</pre>
+
+    <h3>4. 验收指标</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>维度</th>
+        <th>指标</th>
+        <th>通过标准</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>CPU</td>
+        <td><code>saas-inquiry-user-server</code> CPU 与新实例/同流量基线对比</td>
+        <td>旧实例不再出现同等程度 JSqlParser 线程突刺。</td>
+      </tr>
+      <tr>
+        <td>JSqlParser</td>
+        <td><code>JsqlParserGlobal.parse</code> total / avg-rt / 慢 trace</td>
+        <td>目标链路的数据权限解析调用显著下降。</td>
+      </tr>
+      <tr>
+        <td>SQL 语义</td>
+        <td>最终 SQL 条件</td>
+        <td>包含 <code>deleted=false</code> 与租户条件。</td>
+      </tr>
+      <tr>
+        <td>权限</td>
+        <td>跨租户、部门/本人数据范围负样本</td>
+        <td>无越权返回。</td>
+      </tr>
+      <tr>
+        <td>数据库</td>
+        <td>慢 SQL、rows examined、DB span</td>
+        <td>不出现明显负载转移。</td>
+      </tr>
+      <tr>
+        <td>稳定性</td>
+        <td>5xx、BindingException、Invalid bound statement</td>
+        <td>无新增 mapper 绑定错误。</td>
+      </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>八、灰度发布与回滚预案</h2>
+    <h3>1. 灰度发布步骤</h3>
+    <ol>
+      <li>预发环境完成静态门禁、功能回归、SQL 抽样和 Arthas 验证。</li>
+      <li>生产先发布单实例或小流量实例，固定路由或按实例版本区分观测。</li>
+      <li>观察 30 分钟：确认无 mapper 错误、无 SQL 语义异常、CPU 无新增突刺。</li>
+      <li>观察 60 分钟：覆盖常规业务流量，确认 parse total / avg-rt 与接口 P95/P99 达标。</li>
+      <li>观察 120 分钟或业务高峰：确认高峰下 JSqlParser 热点没有回升。</li>
+      <li>逐步扩大流量至全量。</li>
+    </ol>
+
+    <h3>2. 回滚触发条件</h3>
+    <ul>
+      <li>出现跨租户数据返回。</li>
+      <li>出现 deleted=true 角色关系返回。</li>
+      <li>出现部门/本人数据范围越权。</li>
+      <li>出现 <code>BindingException</code>、<code>Invalid bound statement</code>、mapper XML 加载错误。</li>
+      <li>数据库慢 SQL 或扫描行异常放大。</li>
+      <li>CPU 未改善且出现新的性能瓶颈。</li>
+    </ul>
+
+    <h3>3. 回滚方式</h3>
+    <div class="callout danger">
+      <p><span class="tag red">硬性要求</span></p>
+      <ul>
+        <li>只能整体回退上一版本制品，或关闭该精确 mapper 改造路径。</li>
+        <li>不能只回滚 Java class 或只回滚 XML。</li>
+        <li>不能通过添加 <code>@TenantIgnore</code>、<code>tenantLine = "true"</code>、ignore-tables 或全局关闭数据权限来止血。</li>
+        <li>回滚后需重启/替换实例，以清理本地 JSqlParser parse cache 与类加载状态。</li>
+      </ul>
+    </div>
+
+    <h3>4. 回滚后复核</h3>
+    <ul>
+      <li>确认所有实例版本一致。</li>
+      <li>确认启动无 mapper 绑定错误。</li>
+      <li>复测跨租户隔离、逻辑删除、部门/本人数据范围。</li>
+      <li>复核 CPU 是否回到旧热点；如回到旧热点，配合扩容、限流或临时摘除异常实例止血。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>九、第二阶段优化方向</h2>
+    <h3>1. 基于 mappedStatementId 继续治理</h3>
+    <p>
+      第一阶段上线后，通过 Arthas 继续收集剩余进入 <code>DataPermissionInterceptor.beforeQuery</code> 的高频 mappedStatementId。
+      后续只能选择满足以下条件的 SQL 加入白名单：
+    </p>
+    <ul>
+      <li>高频。</li>
+      <li>不承载部门/本人数据范围。</li>
+      <li>不涉及跨租户聚合。</li>
+      <li>能明确保留租户隔离和逻辑删除语义。</li>
+      <li>可以通过 SQL/结果集回归验证。</li>
+    </ul>
+
+    <h3>2. 业务缓存</h3>
+    <p>
+      可评估缓存 <code>tenantId + sorted(roleIds) -> userIds/UserRoleVO</code>，但不建议一开始缓存最终员工列表。
+      如果缓存最终用户结果，key 必须包含登录人数据范围上下文，否则会有越权风险。
+    </p>
+
+    <h3>3. JSqlParser 缓存调优</h3>
+    <p>
+      如果减少无效 parse 后，旧实例仍在 <code>JsqlParseCache.getStatement()</code> 有明显热点，再评估
+      <code>JsqlParserGlobal.setJsqlParseCache(...)</code>、缓存容量、TTL 或缓存实现。该动作应排在 mapper 短路和业务缓存之后，
+      因为盲目调大缓存可能增加堆压力、GC 和反序列化成本。
+    </p>
+  </section>
+
+  <section>
+    <h2>十、仍需确认的问题</h2>
+    <ol>
+      <li>
+        生产实际加载的 <code>DataPermissionConfiguration</code> 是否就是当前源码中规则为空的版本？是否有 starter 或其他分支注册了额外规则？
+      </li>
+      <li>
+        <code>AdminUserServiceImpl.getUserListByRoleCodes</code> 的业务语义是否明确为“当前租户内角色成员全量可见”，还是也需要当前登录人部门/本人数据范围？
+      </li>
+      <li>
+        <code>AdminUserApiImpl.getCrmUserRoleIdListByRoleIds</code>、BPM/异步/Dubbo 链路是否始终具备正确 <code>TenantContextHolder</code>？
+      </li>
+      <li>
+        <code>roleService.selectByCodes</code> 返回角色是否已受当前租户约束？role code / role id 在多租户间是否可能复用？
+      </li>
+      <li>
+        生产 <code>system_user_role</code> 是否有支撑 <code>tenant_id + role_id + deleted</code> 或等价条件的索引？
+      </li>
+      <li>
+        高峰流量下 roleIds 集合大小分布如何？是否存在超大 IN 列表导致 SQL parse cache key 基数过高？
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>十一、最终建议</h2>
+    <div class="callout ok">
+      <p>
+        建议按“<strong>小步、单点、可验证、可回滚</strong>”原则推进。第一阶段只改
+        <code>UserRoleMapper.getUserListByRoleIds</code>，把 default helper 改为明确 mapped statement，并只添加
+        <code>@InterceptorIgnore(dataPermission = "true")</code>。该改造能优先降低报告中最明确热点链路的数据权限解析成本，
+        同时把租户隔离、逻辑删除、部门/本人数据范围风险控制在可验证范围内。
+      </p>
+      <p>
+        若第一阶段验证有效，再依据线上 mappedStatementId 热点清单扩展治理范围。不要在没有运行时证据前扩大 ignore 范围，
+        也不要优先通过调大 JSqlParser 缓存解决问题。
+      </p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

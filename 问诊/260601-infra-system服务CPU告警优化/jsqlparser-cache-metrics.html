@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JSqlParser 缓存指标监控</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --ok: #16a34a;
+      --error: #dc2626;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+      color: var(--text);
+      background: linear-gradient(135deg, #eef4ff 0%, var(--bg) 48%, #f8fafc 100%);
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 36px 0;
+    }
+
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(26px, 4vw, 38px);
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .env-select {
+      min-width: 240px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--text);
+      background: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      outline: none;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 11px 16px;
+      color: #fff;
+      background: var(--primary);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
+      transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+    }
+
+    button:hover {
+      background: var(--primary-dark);
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
+      transform: none;
+    }
+
+    .status {
+      margin-bottom: 18px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.75);
+      color: var(--muted);
+      backdrop-filter: blur(8px);
+    }
+
+    .status.success {
+      color: var(--ok);
+      border-color: rgba(22, 163, 74, 0.22);
+      background: rgba(240, 253, 244, 0.82);
+    }
+
+    .status.error {
+      color: var(--error);
+      border-color: rgba(220, 38, 38, 0.22);
+      background: rgba(254, 242, 242, 0.82);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .card {
+      min-height: 150px;
+      padding: 20px;
+      border: 1px solid rgba(229, 231, 235, 0.9);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .metric-name {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      word-break: break-all;
+    }
+
+    .metric-value {
+      margin: 0 0 12px;
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+    }
+
+    .metric-desc {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th,
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: #374151;
+      background: #f9fafb;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      color: #334155;
+    }
+
+    .tag {
+      display: inline-block;
+      margin: 0 6px 6px 0;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .empty {
+      color: var(--muted);
+    }
+
+    @media (max-width: 720px) {
+      .header {
+        display: block;
+      }
+
+      .toolbar {
+        justify-content: flex-start;
+        margin-top: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="header">
+      <div>
+        <h1>JSqlParser 缓存指标监控</h1>
+        <p class="subtitle">
+          批量请求 actuator metrics，并展示 jsqlparser.parse 缓存大小、命中、未命中、命中率和淘汰数据。
+        </p>
+      </div>
+      <div class="toolbar">
+        <select id="envSelect" class="env-select" aria-label="选择环境">
+          <option value="https://inquiry.test.ybm100.com" selected>测试环境</option>
+          <option value="https://inquiry.ybm100.com">生产环境</option>
+        </select>
+        <button id="refreshBtn" type="button">刷新指标</button>
+      </div>
+    </section>
+
+    <div id="status" class="status">准备加载指标...</div>
+    <section id="cards" class="grid" aria-label="指标卡片"></section>
+
+    <section class="table-wrap" aria-label="指标明细表">
+      <table>
+        <thead>
+          <tr>
+            <th>指标名</th>
+            <th>统计类型</th>
+            <th>值</th>
+            <th>描述</th>
+            <th>标签</th>
+          </tr>
+        </thead>
+        <tbody id="metricRows">
+          <tr>
+            <td colspan="5" class="empty">暂无数据</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const METRICS_PATH = '/actuator/metrics/';
+    const METRICS = [
+      'jsqlparser.cache.estimated.size',
+      'jsqlparser.cache.hit.count',
+      'jsqlparser.cache.miss.count',
+      'jsqlparser.cache.hit.rate',
+      'jsqlparser.cache.eviction.count',
+      'jsqlparser.cache.eviction.weight'
+    ];
+
+    const METRIC_DESCRIPTIONS = {
+      'jsqlparser.cache.estimated.size': 'JSqlParser 解析缓存当前估算条目数',
+      'jsqlparser.cache.hit.count': 'JSqlParser 解析缓存命中次数',
+      'jsqlparser.cache.miss.count': 'JSqlParser 解析缓存未命中次数',
+      'jsqlparser.cache.hit.rate': 'JSqlParser 解析缓存命中率',
+      'jsqlparser.cache.eviction.count': 'JSqlParser 解析缓存淘汰次数',
+      'jsqlparser.cache.eviction.weight': 'JSqlParser 解析缓存淘汰总权重（按 KB/MB 展示）'
+    };
+
+    const envSelect = document.getElementById('envSelect');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const statusEl = document.getElementById('status');
+    const cardsEl = document.getElementById('cards');
+    const metricRowsEl = document.getElementById('metricRows');
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function formatValue(metricName, value) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+        return '-';
+      }
+
+      const numericValue = Number(value);
+      if (metricName.endsWith('.hit.rate')) {
+        return `${(numericValue * 100).toFixed(2)}%`;
+      }
+
+      if (metricName.endsWith('.eviction.weight')) {
+        return formatWeight(numericValue);
+      }
+
+      return new Intl.NumberFormat('zh-CN', {
+        maximumFractionDigits: 4
+      }).format(numericValue);
+    }
+
+    function formatWeight(bytes) {
+      const formatter = new Intl.NumberFormat('zh-CN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+
+      if (Math.abs(bytes) >= 1024 * 1024) {
+        return `${formatter.format(bytes / 1024 / 1024)} MB`;
+      }
+
+      return `${formatter.format(bytes / 1024)} KB`;
+    }
+
+    function renderTags(tags = []) {
+      if (!tags.length) {
+        return '<span class="empty">无</span>';
+      }
+
+      return tags.map(({ tag, values }) => {
+        const text = `${tag}: ${(values || []).join(', ')}`;
+        return `<span class="tag">${escapeHtml(text)}</span>`;
+      }).join('');
+    }
+
+    function getMeasurement(metric) {
+      return metric.measurements?.[0] || { statistic: '-', value: null };
+    }
+
+    function renderMetrics(metrics) {
+      cardsEl.innerHTML = metrics.map((metric) => {
+        const measurement = getMeasurement(metric);
+        return `
+          <article class="card">
+            <p class="metric-name"><code>${escapeHtml(metric.name)}</code></p>
+            <p class="metric-value">${escapeHtml(formatValue(metric.name, measurement.value))}</p>
+            <p class="metric-desc">${escapeHtml(METRIC_DESCRIPTIONS[metric.name] || metric.description || '无描述')}</p>
+          </article>
+        `;
+      }).join('');
+
+      metricRowsEl.innerHTML = metrics.map((metric) => {
+        const measurement = getMeasurement(metric);
+        return `
+          <tr>
+            <td><code>${escapeHtml(metric.name)}</code></td>
+            <td>${escapeHtml(measurement.statistic)}</td>
+            <td>${escapeHtml(formatValue(metric.name, measurement.value))}</td>
+            <td>${escapeHtml(METRIC_DESCRIPTIONS[metric.name] || metric.description || '无描述')}</td>
+            <td>${renderTags(metric.availableTags)}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function getMetricsBaseUrl() {
+      return `${envSelect.value}${METRICS_PATH}`;
+    }
+
+    async function fetchMetric(metricName) {
+      const response = await fetch(`${getMetricsBaseUrl()}${encodeURIComponent(metricName)}`, {
+        cache: 'no-store'
+      });
+
+      if (!response.ok) {
+        throw new Error(`${metricName} 请求失败：HTTP ${response.status}`);
+      }
+
+      return response.json();
+    }
+
+    async function loadMetrics() {
+      refreshBtn.disabled = true;
+      statusEl.className = 'status';
+      statusEl.textContent = '正在加载指标...';
+
+      try {
+        const envText = envSelect.options[envSelect.selectedIndex].text;
+        const metrics = await Promise.all(METRICS.map(fetchMetric));
+        renderMetrics(metrics);
+        statusEl.className = 'status success';
+        statusEl.textContent = `加载成功：${envText}，${new Date().toLocaleString('zh-CN')}，共 ${metrics.length} 个指标。`;
+      } catch (error) {
+        console.error(error);
+        statusEl.className = 'status error';
+        statusEl.textContent = `加载失败：${error.message}。如果直接用 file:// 打开，请确认服务端允许跨域，或把本页面部署到同域名下访问。`;
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    envSelect.addEventListener('change', loadMetrics);
+    refreshBtn.addEventListener('click', loadMetrics);
+    loadMetrics();
+  </script>
+</body>
+</html>

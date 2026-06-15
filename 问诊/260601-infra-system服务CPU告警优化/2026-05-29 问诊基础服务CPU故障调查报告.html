@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2026-05-29 问诊基础服务CPU故障调查报告</title>
+  <style>
+    :root {
+      --bg: #f4f7fa;
+      --paper: #ffffff;
+      --ink: #1f2937;
+      --muted: #64748b;
+      --line: #d8e0ea;
+      --blue: #155e9f;
+      --blue-soft: #e8f2fb;
+      --red: #b42318;
+      --red-soft: #fff1f0;
+      --amber: #a15c07;
+      --amber-soft: #fff7e6;
+      --green: #047857;
+      --green-soft: #ecfdf5;
+      --code-bg: #f8fafc;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      line-height: 1.65;
+    }
+
+    main {
+      width: min(1160px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 52px;
+    }
+
+    header,
+    section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    header {
+      padding: 30px 34px;
+      margin-bottom: 18px;
+    }
+
+    section {
+      padding: 24px 28px;
+      margin-top: 16px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 12px;
+      font-size: 30px;
+      line-height: 1.25;
+    }
+
+    h2 {
+      margin-bottom: 14px;
+      font-size: 22px;
+      line-height: 1.35;
+    }
+
+    h3 {
+      margin: 20px 0 10px;
+      font-size: 17px;
+    }
+
+    p {
+      margin-bottom: 12px;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .meta div,
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 13px 15px;
+    }
+
+    .meta span,
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .meta strong,
+    .metric strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--ink);
+      font-size: 15px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .metric strong {
+      color: var(--blue);
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    .callout {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 14px 16px;
+    }
+
+    .callout.danger {
+      border-color: #fecaca;
+      background: var(--red-soft);
+    }
+
+    .callout.warn {
+      border-color: #fed7aa;
+      background: var(--amber-soft);
+    }
+
+    .callout.ok {
+      border-color: #bbf7d0;
+      background: var(--green-soft);
+    }
+
+    .tag {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .tag.red {
+      color: var(--red);
+      background: var(--red-soft);
+    }
+
+    .tag.amber {
+      color: var(--amber);
+      background: var(--amber-soft);
+    }
+
+    .tag.green {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+
+    table {
+      width: 100%;
+      margin-top: 12px;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f8fafc;
+      color: #334155;
+      font-weight: 700;
+    }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: var(--code-bg);
+      font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+      font-size: 0.94em;
+    }
+
+    pre {
+      overflow-x: auto;
+      margin: 12px 0 0;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--code-bg);
+      font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    ul,
+    ol {
+      margin: 8px 0 0 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 7px 0;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 860px) {
+      main {
+        width: min(100% - 20px, 1160px);
+        padding-top: 16px;
+      }
+
+      header,
+      section {
+        padding: 20px 16px;
+      }
+
+      .meta,
+      .grid-2,
+      .metrics {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>2026-05-29 问诊基础服务CPU故障调查报告</h1>
+    <p>
+      本报告基于线程栈、容器资源现象、旧实例连续 dump、以及 Arthas 在线观测结果整理。
+      调查对象为 <code>saas-inquiry-user-server</code> 旧实例与新实例在同等流量下的 CPU 差异。
+    </p>
+    <div class="meta">
+      <div>
+        <span>服务</span>
+        <strong>saas-inquiry-user-server</strong>
+      </div>
+      <div>
+        <span>JDK</span>
+        <strong>21.0.5</strong>
+      </div>
+      <div>
+        <span>容器 CPU</span>
+        <strong>request 4 / limit 6</strong>
+      </div>
+      <div>
+        <span>主要热点</span>
+        <strong>JSqlParser Cache</strong>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <h2>一、最终结论</h2>
+    <div class="grid-2">
+      <div class="callout danger">
+        <p>
+          <span class="tag red">直接原因</span>
+          CPU 突刺发生在 MyBatis-Plus 数据权限 SQL 解析链路：
+          <code>DataPermissionInterceptor -> JsqlParserGlobal.parse -> JsqlParseCache.getStatement</code>。
+        </p>
+      </div>
+      <div class="callout warn">
+        <p>
+          <span class="tag amber">关键差异</span>
+          新旧实例请求量和 SQL 长度接近，但旧实例单次 <code>parse()</code> 平均耗时更高，
+          主要成本集中在 <code>JdkSerialCaffeineJsqlParseCache.getStatement()</code>。
+        </p>
+      </div>
+    </div>
+    <p style="margin-top: 14px;">
+      综合判断：旧实例长期运行并经历大量医保目录更新后，JSqlParser 解析缓存和堆内对象状态变重，
+      导致 Caffeine + JDK 序列化缓存查询/恢复解析结果的成本升高。同等流量下，旧实例 CPU 更容易突刺。
+    </p>
+  </section>
+
+  <section>
+    <h2>二、故障现象</h2>
+    <ul>
+      <li>旧实例一旦重新承接流量，CPU 明显高于新实例。</li>
+      <li><code>top -H -p &lt;pid&gt;</code> 观察到高 CPU 线程为 <code>mybatis-plus-jsqlParser-*</code>。</li>
+      <li>新实例承接当前线上流量后，CPU 没有同等程度突刺。</li>
+      <li>旧实例停流量后，连续线程栈显示 JSqlParser 线程池逐步回到空闲状态。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>三、关键证据</h2>
+    <h3>1. 原始线程栈中的 JSqlParser 热点</h3>
+    <pre>"mybatis-plus-jsqlParser-878" ... cpu=2440136.66ms ...
+java.lang.Thread.State: RUNNABLE
+  at net.sf.jsqlparser.parser.CCJSqlParser...
+  at net.sf.jsqlparser.parser.CCJSqlParserUtil$1.call</pre>
+
+    <p>对应业务链路：</p>
+    <pre>DubboServerHandler
+FutureTask.get
+CCJSqlParserUtil.parseStatement
+JsqlParserGlobal.parse
+DataPermissionInterceptor.beforeQuery
+UserRoleMapper.getUserListByRoleIds
+PermissionServiceImpl.getUserListByRoleIds
+AdminUserApiImpl.getUserListByRoleCodes</pre>
+
+    <h3>2. 旧实例停流量后的连续 dump</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>线程</th>
+        <th>thread-1 CPU</th>
+        <th>thread-2 CPU</th>
+        <th>1 -> 2 增量</th>
+        <th>thread-3 CPU</th>
+        <th>2 -> 3 增量</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td><code>mybatis-plus-jsqlParser-876</code></td>
+        <td>2635558ms</td>
+        <td>2638342ms</td>
+        <td>2784ms</td>
+        <td>2638345ms</td>
+        <td>2.65ms</td>
+      </tr>
+      <tr>
+        <td><code>mybatis-plus-jsqlParser-878</code></td>
+        <td>2633404ms</td>
+        <td>2636090ms</td>
+        <td>2686ms</td>
+        <td>2636092ms</td>
+        <td>2.44ms</td>
+      </tr>
+      <tr>
+        <td><code>mybatis-plus-jsqlParser-879</code></td>
+        <td>2630817ms</td>
+        <td>2633490ms</td>
+        <td>2673ms</td>
+        <td>2633492ms</td>
+        <td>1.62ms</td>
+      </tr>
+      </tbody>
+    </table>
+    <p class="small">
+      结论：旧实例没有历史 JSqlParser 任务一直空转；CPU 高只在承接流量时明显出现。
+    </p>
+
+    <h3>3. Arthas monitor 对比</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>实例</th>
+        <th>每 5 秒 parse 调用量</th>
+        <th>平均耗时</th>
+        <th>判断</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>新实例</td>
+        <td>约 2100 - 2400 次</td>
+        <td>约 0.30 - 0.36ms</td>
+        <td>调用量稳定，单次成本较低。</td>
+      </tr>
+      <tr>
+        <td>旧实例</td>
+        <td>约 2250 - 2700 次</td>
+        <td>约 0.44 - 1.19ms</td>
+        <td>调用量相近，但单次成本明显更高。</td>
+      </tr>
+      </tbody>
+    </table>
+
+    <div class="metrics">
+      <div class="metric">
+        <span>新实例 avg-rt</span>
+        <strong>0.30-0.36ms</strong>
+      </div>
+      <div class="metric">
+        <span>旧实例 avg-rt</span>
+        <strong>0.44-1.19ms</strong>
+      </div>
+      <div class="metric">
+        <span>旧实例成本放大</span>
+        <strong>约 1.5-3x</strong>
+      </div>
+    </div>
+
+    <h3>4. SQL 长度对比</h3>
+    <table>
+      <thead>
+      <tr>
+        <th>实例</th>
+        <th>采样 SQL 长度</th>
+        <th>结论</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>旧实例</td>
+        <td><code>448, 264, 589, 185, 448, 213, 215, 484, 296, 210...</code></td>
+        <td>主要为几百字符级。</td>
+      </tr>
+      <tr>
+        <td>新实例</td>
+        <td><code>180, 448, 620, 215, 213, 448, 484, 291...</code></td>
+        <td>长度分布与旧实例接近。</td>
+      </tr>
+      </tbody>
+    </table>
+    <p class="small">
+      结论：旧实例 CPU 更高，不是因为 SQL 明显更长。
+    </p>
+
+    <h3>5. 缓存实现确认</h3>
+    <pre>JdkSerialCaffeineJsqlParseCache
+logger = Slf4jImpl
+cache = BoundedLocalManualCache
+async = false
+executor = null</pre>
+    <p>
+      这说明当前 JSqlParser 缓存使用 Caffeine，并结合 JDK 序列化方式保存或恢复解析结果。
+      命中缓存时仍可能产生反序列化、深拷贝、对象重建等 CPU 成本。
+    </p>
+  </section>
+
+  <section>
+    <h2>四、原因分析</h2>
+    <ol>
+      <li>昨晚更新 30-40 万医保目录后，旧实例长时间运行过程中可能积累了大量不同 SQL 解析缓存和 AST 对象。</li>
+      <li>早上用户并发上来后，大量 Dubbo 请求进入数据权限拦截器，每次查询前都会调用 <code>JsqlParserGlobal.parse()</code>。</li>
+      <li>新旧实例 parse 调用量接近，说明不是明显请求量不均。</li>
+      <li>新旧实例 SQL 长度接近，说明不是 SQL 明显变长。</li>
+      <li>旧实例 parse 平均耗时更高，且主要耗时集中在 <code>JsqlParseCache.getStatement()</code>。</li>
+      <li>旧实例缓存规模、缓存对象状态或堆内对象分布较新实例更重，导致 Caffeine + JDK 序列化缓存查询/恢复成本升高。</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>五、为什么新实例正常</h2>
+    <p>
+      新实例是冷启动状态，JSqlParser 缓存较小，堆内对象状态更干净。
+      即使承接相近流量，<code>JsqlParserGlobal.parse()</code> 单次平均耗时更低，因此 CPU 没有明显突刺。
+    </p>
+    <div class="callout ok">
+      <p>
+        重启旧实例能缓解问题，本质上是清空 JVM 内 JSqlParser 缓存和相关对象状态。
+        这能止血，但不是根治。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>六、已排除方向</h2>
+    <table>
+      <thead>
+      <tr>
+        <th>方向</th>
+        <th>依据</th>
+        <th>结论</th>
+      </tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td>数据库慢</td>
+        <td>热点栈在 Java 内部 <code>JsqlParserGlobal.parse</code> 和 <code>JsqlParseCache.getStatement</code>。</td>
+        <td>不是主因。</td>
+      </tr>
+      <tr>
+        <td>GC</td>
+        <td>线程栈中 GC 线程 CPU 不足以解释突刺。</td>
+        <td>不是主因。</td>
+      </tr>
+      <tr>
+        <td>请求量明显不均</td>
+        <td>Arthas monitor 显示新旧实例 parse 调用量接近。</td>
+        <td>不是主要解释。</td>
+      </tr>
+      <tr>
+        <td>SQL 明显更长</td>
+        <td>watch SQL length 显示新旧实例 SQL 长度分布接近。</td>
+        <td>不是主要解释。</td>
+      </tr>
+      <tr>
+        <td>历史任务空转</td>
+        <td>旧实例停流量后三次 dump 中 JSqlParser 线程处于 <code>WAITING</code>。</td>
+        <td>不是持续后台空转。</td>
+      </tr>
+      <tr>
+        <td><code>UserCrmOaLeadImportJob</code></td>
+        <td>原始线程栈未出现该类。</td>
+        <td>不是本次直接热点。</td>
+      </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>七、影响范围</h2>
+    <ul>
+      <li>旧实例 CPU 使用率升高，可能触发容器 CPU limit 下的调度竞争。</li>
+      <li>Dubbo 请求处理线程在 SQL 执行前消耗更多 CPU。</li>
+      <li>数据权限拦截涉及的高频查询会被放大影响。</li>
+      <li>如果缓存继续膨胀或抖动，可能出现周期性突刺。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>八、处置建议</h2>
+    <h3>短期止血</h3>
+    <ol>
+      <li>重启旧实例，清空 JVM 内 JSqlParser 缓存和相关对象状态。</li>
+      <li>临时摘除 CPU 异常旧实例，优先由新实例承接流量。</li>
+      <li>持续观察 <code>monitor JsqlParserGlobal parse -c 5</code> 的 <code>avg-rt</code>。</li>
+    </ol>
+
+    <h3>根治方向</h3>
+    <ol>
+      <li>
+        对不需要数据权限改写的查询，使用
+        <code>@InterceptorIgnore(dataPermission = "true")</code>，让拦截器在进入 JSqlParser 前直接返回。
+      </li>
+      <li>
+        当前优先关注链路：
+        <code>UserRoleMapper.getUserListByRoleIds</code>、
+        <code>PermissionServiceImpl.getUserListByRoleIds</code>、
+        <code>AdminUserApiImpl.getUserListByRoleCodes</code>。
+      </li>
+      <li>
+        将 mapper default 方法改成明确 mapped statement，再挂拦截器忽略注解，避免注解挂不到最终 mappedStatement。
+      </li>
+      <li>
+        评估 JSqlParser 缓存实现和容量，避免长期运行后缓存膨胀或频繁淘汰。
+      </li>
+      <li>
+        对高频权限类查询增加业务缓存，减少进入 MyBatis-Plus 数据权限解析链路的次数。
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>九、后续验证命令</h2>
+    <pre># 观察 parse 调用量和平均耗时
+monitor com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal parse -c 5
+
+# 只追踪慢 parse
+trace com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal parse '#cost > 1' -n 20
+
+# 观察 SQL 长度
+watch com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal parse '{params[0] == null ? -1 : params[0].length()}' -x 1 -n 50
+
+# 观察触发的数据权限 mapper
+watch com.baomidou.mybatisplus.extension.plugins.inner.DataPermissionInterceptor beforeQuery '{params[1].id}' -x 1 -n 50
+
+# 查看 JSqlParser 缓存对象
+sc -d com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal
+ognl -c &lt;classLoaderHash&gt; '@com.baomidou.mybatisplus.extension.parser.JsqlParserGlobal@jsqlParseCache'</pre>
+  </section>
+
+  <section>
+    <h2>十、最终判断</h2>
+    <div class="callout ok">
+      <p>
+        本次故障的根因不是单条 SQL 慢、数据库慢或请求量明显不均，而是旧实例高频进入
+        MyBatis-Plus 数据权限 SQL 解析链路时，<code>JdkSerialCaffeineJsqlParseCache.getStatement()</code>
+        在旧实例上的平均成本显著高于新实例，导致 CPU 突刺。
+      </p>
+      <p>
+        最有效的长期治理是减少不必要的 <code>DataPermissionInterceptor -> JsqlParserGlobal.parse</code>
+        调用，优先对无需数据权限的 mapper 查询做 <code>@InterceptorIgnore(dataPermission = "true")</code>。
+      </p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

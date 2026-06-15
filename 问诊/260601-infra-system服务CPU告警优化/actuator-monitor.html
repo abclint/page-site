@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Actuator 监控查询</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --ok: #16a34a;
+      --error: #dc2626;
+      --warning: #d97706;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+      color: var(--text);
+      background: linear-gradient(135deg, #eef4ff 0%, var(--bg) 48%, #f8fafc 100%);
+    }
+
+    .page {
+      width: min(1280px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 36px 0;
+    }
+
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(26px, 4vw, 38px);
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .toolbar,
+    .form-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .toolbar {
+      justify-content: flex-end;
+    }
+
+    select,
+    input {
+      min-width: 260px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--text);
+      background: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      outline: none;
+    }
+
+    input {
+      min-width: 320px;
+      font-weight: 500;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 11px 16px;
+      color: #fff;
+      background: var(--primary);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
+      transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+    }
+
+    button.secondary {
+      color: var(--primary);
+      background: #eff6ff;
+      box-shadow: none;
+    }
+
+    button:hover {
+      background: var(--primary-dark);
+      transform: translateY(-1px);
+    }
+
+    button.secondary:hover {
+      color: #fff;
+      background: var(--primary);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
+      transform: none;
+    }
+
+    .status {
+      margin-bottom: 18px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.75);
+      color: var(--muted);
+      backdrop-filter: blur(8px);
+    }
+
+    .status.success {
+      color: var(--ok);
+      border-color: rgba(22, 163, 74, 0.22);
+      background: rgba(240, 253, 244, 0.82);
+    }
+
+    .status.error {
+      color: var(--error);
+      border-color: rgba(220, 38, 38, 0.22);
+      background: rgba(254, 242, 242, 0.82);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .card {
+      border: 1px solid rgba(229, 231, 235, 0.9);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      background: #f9fafb;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .card-body {
+      padding: 18px;
+    }
+
+    .link-list {
+      max-height: 620px;
+      overflow: auto;
+      padding: 8px;
+    }
+
+    .link-item {
+      width: 100%;
+      display: block;
+      margin: 0 0 8px;
+      padding: 12px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      color: var(--text);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .link-item:hover,
+    .link-item.active {
+      border-color: rgba(37, 99, 235, 0.25);
+      background: #eff6ff;
+    }
+
+    .link-name {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-weight: 800;
+    }
+
+    .link-href {
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      word-break: break-all;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 999px;
+      color: #3730a3;
+      background: #eef2ff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .badge.warn {
+      color: #92400e;
+      background: #fef3c7;
+    }
+
+    .detail-meta {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .detail-meta code,
+    pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    .detail-meta code {
+      color: #334155;
+      word-break: break-all;
+    }
+
+    .template-vars,
+    .metrics-panel {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fbfdff;
+    }
+
+    .template-vars.hidden,
+    .metrics-panel.hidden {
+      display: none;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    label {
+      color: #374151;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    pre {
+      min-height: 360px;
+      max-height: 720px;
+      overflow: auto;
+      margin: 0;
+      padding: 16px;
+      border: 1px solid #dbe4f0;
+      border-radius: 14px;
+      color: #dbeafe;
+      background: #0f172a;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .empty {
+      color: var(--muted);
+    }
+
+    @media (max-width: 900px) {
+      .header {
+        display: block;
+      }
+
+      .toolbar {
+        justify-content: flex-start;
+        margin-top: 16px;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="header">
+      <div>
+        <h1>Actuator 监控查询</h1>
+        <p class="subtitle">
+          先请求 <code>/actuator</code> 获取全部 links，再选择不同 endpoint 查询详情；metrics 支持继续选择具体指标。
+        </p>
+      </div>
+      <div class="toolbar">
+        <select id="envSelect" aria-label="选择环境">
+          <option value="https://inquiry.test.ybm100.com" selected>测试环境</option>
+          <option value="https://inquiry.ybm100.com">生产环境</option>
+        </select>
+        <button id="reloadLinksBtn" type="button">加载 Links</button>
+      </div>
+    </section>
+
+    <div id="status" class="status">准备加载 /actuator links...</div>
+
+    <section class="layout">
+      <aside class="card">
+        <div class="card-header">
+          <h2 class="card-title">Actuator Links</h2>
+          <span id="linkCount" class="badge">0</span>
+        </div>
+        <div id="linkList" class="link-list">
+          <p class="empty">暂无 links</p>
+        </div>
+      </aside>
+
+      <section class="card">
+        <div class="card-header">
+          <h2 class="card-title">详情</h2>
+          <button id="queryBtn" class="secondary" type="button" disabled>查询当前 Link</button>
+        </div>
+        <div class="card-body">
+          <div class="detail-meta">
+            <div>当前环境：<code id="currentEnv">-</code></div>
+            <div>当前 Link：<code id="currentLinkName">未选择</code></div>
+            <div>请求地址：<code id="currentUrl">-</code></div>
+          </div>
+
+          <div id="templateVars" class="template-vars hidden"></div>
+
+          <div id="metricsPanel" class="metrics-panel hidden">
+            <div class="field">
+              <label for="metricSelect">选择 Metrics 指标</label>
+              <div class="form-row">
+                <select id="metricSelect"></select>
+                <button id="queryMetricBtn" type="button">查询指标详情</button>
+              </div>
+              <p class="hint">选择 <code>metrics</code> endpoint 后，会先加载所有可用指标名，再按指标名查询 <code>/actuator/metrics/{metricName}</code>。</p>
+            </div>
+          </div>
+
+          <pre id="result">请选择左侧 link 后查询。</pre>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const ACTUATOR_PATH = '/actuator';
+
+    const envSelect = document.getElementById('envSelect');
+    const reloadLinksBtn = document.getElementById('reloadLinksBtn');
+    const queryBtn = document.getElementById('queryBtn');
+    const queryMetricBtn = document.getElementById('queryMetricBtn');
+    const metricSelect = document.getElementById('metricSelect');
+    const statusEl = document.getElementById('status');
+    const linkListEl = document.getElementById('linkList');
+    const linkCountEl = document.getElementById('linkCount');
+    const currentEnvEl = document.getElementById('currentEnv');
+    const currentLinkNameEl = document.getElementById('currentLinkName');
+    const currentUrlEl = document.getElementById('currentUrl');
+    const templateVarsEl = document.getElementById('templateVars');
+    const metricsPanelEl = document.getElementById('metricsPanel');
+    const resultEl = document.getElementById('result');
+
+    let actuatorLinks = [];
+    let selectedLink = null;
+
+    function actuatorRootUrl() {
+      return `${envSelect.value}${ACTUATOR_PATH}`;
+    }
+
+    function setStatus(message, type = '') {
+      statusEl.className = type ? `status ${type}` : 'status';
+      statusEl.textContent = message;
+    }
+
+    function showJson(data) {
+      resultEl.textContent = JSON.stringify(data, null, 2);
+    }
+
+    function showText(text) {
+      resultEl.textContent = text;
+    }
+
+    function parseLinks(rootResponse) {
+      const links = rootResponse?._links || {};
+      return Object.entries(links)
+        .map(([name, link]) => ({
+          name,
+          href: link.href,
+          templated: Boolean(link.templated)
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    function normalizeActuatorHref(href) {
+      try {
+        const url = new URL(href);
+        return `${envSelect.value}${url.pathname}${url.search}${url.hash}`;
+      } catch {
+        if (href.startsWith('/')) {
+          return `${envSelect.value}${href}`;
+        }
+        return `${actuatorRootUrl()}/${href}`;
+      }
+    }
+
+    function templateVariables(href) {
+      return [...href.matchAll(/\{([^}]+)}/g)].map((match) => match[1]);
+    }
+
+    function cleanVariableName(variable) {
+      return variable.replace(/^\*/, '').replace(/[?:].*$/, '');
+    }
+
+    function renderLinks() {
+      linkCountEl.textContent = String(actuatorLinks.length);
+
+      if (!actuatorLinks.length) {
+        linkListEl.innerHTML = '<p class="empty">没有从 /actuator 返回任何 links。</p>';
+        return;
+      }
+
+      linkListEl.innerHTML = actuatorLinks.map((link) => `
+        <button class="link-item" type="button" data-link-name="${escapeHtml(link.name)}">
+          <span class="link-name">
+            <span>${escapeHtml(link.name)}</span>
+            ${link.templated ? '<span class="badge warn">模板</span>' : '<span class="badge">GET</span>'}
+          </span>
+          <span class="link-href">${escapeHtml(normalizeActuatorHref(link.href))}</span>
+        </button>
+      `).join('');
+
+      linkListEl.querySelectorAll('.link-item').forEach((button) => {
+        button.addEventListener('click', () => {
+          const linkName = button.dataset.linkName;
+          selectLink(actuatorLinks.find((link) => link.name === linkName));
+        });
+      });
+    }
+
+    function selectLink(link) {
+      selectedLink = link;
+      queryBtn.disabled = !link;
+      metricsPanelEl.classList.add('hidden');
+      renderTemplateFields(link);
+      updateCurrentMeta();
+
+      linkListEl.querySelectorAll('.link-item').forEach((button) => {
+        button.classList.toggle('active', button.dataset.linkName === link?.name);
+      });
+
+      if (link) {
+        showText('已选择 link，点击“查询当前 Link”获取详情。');
+      }
+    }
+
+    function renderTemplateFields(link) {
+      const variables = link ? templateVariables(link.href) : [];
+      if (!variables.length) {
+        templateVarsEl.classList.add('hidden');
+        templateVarsEl.innerHTML = '';
+        return;
+      }
+
+      templateVarsEl.classList.remove('hidden');
+      templateVarsEl.innerHTML = `
+        <p class="hint">该 link 是 URI Template，请先填写变量后再查询。</p>
+        ${variables.map((variable) => {
+          const name = cleanVariableName(variable);
+          return `
+            <div class="field">
+              <label for="template-${escapeHtml(name)}">${escapeHtml(name)}</label>
+              <input id="template-${escapeHtml(name)}" data-template-var="${escapeHtml(variable)}" placeholder="请输入 ${escapeHtml(name)}" />
+            </div>
+          `;
+        }).join('')}
+      `;
+
+      templateVarsEl.querySelectorAll('input').forEach((input) => {
+        input.addEventListener('input', updateCurrentMeta);
+      });
+    }
+
+    function buildUrl(link) {
+      let url = normalizeActuatorHref(link.href);
+      const variables = templateVariables(link.href);
+
+      variables.forEach((variable) => {
+        const input = templateVarsEl.querySelector(`[data-template-var="${cssEscape(variable)}"]`);
+        const value = input?.value?.trim();
+        const encodedValue = variable.startsWith('*') ? encodeURI(value || '') : encodeURIComponent(value || '');
+        url = url.replace(`{${variable}}`, encodedValue);
+      });
+
+      return url;
+    }
+
+    function updateCurrentMeta() {
+      currentEnvEl.textContent = envSelect.options[envSelect.selectedIndex].text;
+      currentLinkNameEl.textContent = selectedLink?.name || '未选择';
+      currentUrlEl.textContent = selectedLink ? buildUrl(selectedLink) : '-';
+    }
+
+    async function requestJson(url) {
+      const response = await fetch(url, { cache: 'no-store' });
+      const bodyText = await response.text();
+      const body = parseJsonLike(bodyText);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${typeof body === 'string' ? body : JSON.stringify(body)}`);
+      }
+
+      return body;
+    }
+
+    function parseJsonLike(text) {
+      if (!text) {
+        return text;
+      }
+
+      try {
+        const parsed = JSON.parse(text);
+        // 兼容返回值被二次 JSON 编码的情况：详情里看到的是包裹双引号的 JSON 字符串。
+        if (typeof parsed === 'string' && looksLikeJson(parsed)) {
+          return JSON.parse(parsed);
+        }
+        return parsed;
+      } catch {
+        return text;
+      }
+    }
+
+    function looksLikeJson(value) {
+      const trimmed = value.trim();
+      return (trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'));
+    }
+
+    async function loadLinks() {
+      reloadLinksBtn.disabled = true;
+      queryBtn.disabled = true;
+      selectedLink = null;
+      updateCurrentMeta();
+      metricsPanelEl.classList.add('hidden');
+      templateVarsEl.classList.add('hidden');
+      showText('正在加载 /actuator links...');
+      setStatus(`正在请求 ${actuatorRootUrl()} ...`);
+
+      try {
+        const rootResponse = await requestJson(actuatorRootUrl());
+        actuatorLinks = parseLinks(rootResponse);
+        renderLinks();
+        showJson(rootResponse);
+        setStatus(`加载成功：${envSelect.options[envSelect.selectedIndex].text}，共 ${actuatorLinks.length} 个 links。`, 'success');
+      } catch (error) {
+        console.error(error);
+        actuatorLinks = [];
+        renderLinks();
+        showText(`加载失败：${error.message}\n\n如果直接用 file:// 打开，请确认服务端允许跨域，或把本页面部署到同域名下访问。`);
+        setStatus(`加载失败：${error.message}`, 'error');
+      } finally {
+        reloadLinksBtn.disabled = false;
+      }
+    }
+
+    async function querySelectedLink() {
+      if (!selectedLink) {
+        return;
+      }
+
+      const url = buildUrl(selectedLink);
+      queryBtn.disabled = true;
+      setStatus(`正在请求 ${url} ...`);
+      showText('正在查询详情...');
+
+      try {
+        const data = await requestJson(url);
+        showJson(data);
+        setStatus(`查询成功：${selectedLink.name}`, 'success');
+
+        if (selectedLink.name === 'metrics' && Array.isArray(data.names)) {
+          renderMetricsPanel(data.names);
+        } else {
+          metricsPanelEl.classList.add('hidden');
+        }
+      } catch (error) {
+        console.error(error);
+        showText(`查询失败：${error.message}`);
+        setStatus(`查询失败：${error.message}`, 'error');
+      } finally {
+        queryBtn.disabled = false;
+      }
+    }
+
+    function renderMetricsPanel(metricNames) {
+      metricsPanelEl.classList.remove('hidden');
+      metricSelect.innerHTML = metricNames
+        .slice()
+        .sort((a, b) => a.localeCompare(b))
+        .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+        .join('');
+    }
+
+    async function queryMetricDetail() {
+      const metricName = metricSelect.value;
+      if (!metricName) {
+        return;
+      }
+
+      const url = `${envSelect.value}${ACTUATOR_PATH}/metrics/${encodeURIComponent(metricName)}`;
+      queryMetricBtn.disabled = true;
+      setStatus(`正在请求 ${url} ...`);
+      showText('正在查询指标详情...');
+
+      try {
+        const data = await requestJson(url);
+        showJson(data);
+        setStatus(`指标查询成功：${metricName}`, 'success');
+      } catch (error) {
+        console.error(error);
+        showText(`指标查询失败：${error.message}`);
+        setStatus(`指标查询失败：${error.message}`, 'error');
+      } finally {
+        queryMetricBtn.disabled = false;
+      }
+    }
+
+    function cssEscape(value) {
+      if (window.CSS && CSS.escape) {
+        return CSS.escape(value);
+      }
+      return String(value).replaceAll('"', '\\"');
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    envSelect.addEventListener('change', loadLinks);
+    reloadLinksBtn.addEventListener('click', loadLinks);
+    queryBtn.addEventListener('click', querySelectedLink);
+    queryMetricBtn.addEventListener('click', queryMetricDetail);
+
+    updateCurrentMeta();
+    loadLinks();
+  </script>
+</body>
+</html>
