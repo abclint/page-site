@@ -19,4 +19,18 @@ rsync -a \
   --exclude='README.md' \
   ./ "$DEST"/
 
+# 注入目录树导航到 index.html
+bash scripts/generate-nav.sh "$DEST"
+
+# Pagefind 搜索索引（pagefind_extended 支持中文分词）
+if command -v pagefind_extended &> /dev/null; then
+  pagefind_extended --site "$DEST"
+  echo "[build-site] Pagefind 索引已构建 → $DEST/pagefind/"
+elif command -v pagefind &> /dev/null; then
+  pagefind --site "$DEST"
+  echo "[build-site] Pagefind 索引已构建 → $DEST/pagefind/"
+else
+  echo "[build-site] 跳过 Pagefind（未安装 pagefind 二进制，CI 中会自动安装）"
+fi
+
 echo "[build-site] 已生成发布集 → $DEST/ ($(find "$DEST" -type f | wc -l | tr -d ' ') 个文件)"

@@ -4,13 +4,59 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>page-site</title>
+    <link href="/pagefind/pagefind-component-ui.css" rel="stylesheet">
+    <script src="/pagefind/pagefind-component-ui.js" type="module"></script>
+    <style>
+      body {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+        font-family: system-ui, -apple-system, sans-serif;
+        line-height: 1.6;
+        color: #333;
+      }
+      header {
+        display: flex;
+        justify-content: flex-end;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #eee;
+        margin-bottom: 2rem;
+      }
+      .nav-tree {
+        list-style: none;
+        padding-left: 1.2rem;
+      }
+      .nav-tree ul {
+        list-style: none;
+        padding-left: 1.2rem;
+      }
+      .nav-dir {
+        font-weight: 600;
+        color: #555;
+      }
+      .nav-tree a {
+        color: #2563eb;
+        text-decoration: none;
+      }
+      .nav-tree a:hover {
+        text-decoration: underline;
+      }
+    </style>
   </head>
   <body>
+    <header>
+      <pagefind-modal-trigger></pagefind-modal-trigger>
+    </header>
     <main>
       <h1>page-site</h1>
       <p>这是一个由 GitHub Actions 自动扫描 + 自动发布的静态站点。</p>
       <p>每次推送会先做敏感信息门禁扫描，通过后才发布，并完整保留目录层级。</p>
-      <p>嵌套示例页：<a href="./demo/nested/">demo/nested/</a></p>
+
+      <nav>
+        <h2>页面导航</h2>
+<!-- NAV_TREE -->
+      </nav>
     </main>
+    <pagefind-modal></pagefind-modal>
   </body>
 </html>
