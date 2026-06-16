@@ -19,6 +19,11 @@ rsync -a \
   --exclude='README.md' \
   ./ "$DEST"/
 
+# 统一 lang 属性，避免 Pagefind 按语言分片导致跨语言搜索失败
+find "$DEST" -name "*.html" | while IFS= read -r f; do
+  sed -i.bak 's/lang="zh-CN"/lang="zh"/g' "$f" && rm -f "$f.bak"
+done
+
 # 注入目录树导航到 index.html
 bash scripts/generate-nav.sh "$DEST"
 
