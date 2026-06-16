@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MQTT 8883 连接失败 — 排查手册与解决方案</title>
+<style>
+  :root {
+    --primary: #1a5fb4;
+    --danger: #c01c28;
+    --warn: #e5a50a;
+    --ok: #26a269;
+    --bg: #f6f8fa;
+    --border: #d0d7de;
+    --code-bg: #1e2228;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    line-height: 1.7; color: #24292f; background: var(--bg);
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 24px 20px 80px; }
+  header {
+    background: linear-gradient(135deg, #1a5fb4, #1c71d8);
+    color: #fff; padding: 36px 20px; margin-bottom: 8px;
+  }
+  header .inner { max-width: 960px; margin: 0 auto; }
+  header h1 { font-size: 26px; font-weight: 600; }
+  header p { margin-top: 8px; opacity: .9; font-size: 14px; }
+  header .meta { margin-top: 12px; font-size: 13px; opacity: .8; }
+  h2 {
+    font-size: 20px; margin: 40px 0 16px; padding-bottom: 8px;
+    border-bottom: 2px solid var(--primary); color: var(--primary);
+  }
+  h3 { font-size: 16px; margin: 24px 0 10px; }
+  p, ul, ol { margin-bottom: 12px; }
+  ul, ol { padding-left: 24px; }
+  li { margin-bottom: 4px; }
+  code {
+    font-family: Consolas, "Courier New", monospace; font-size: 13px;
+    background: #eaeef2; padding: 1px 6px; border-radius: 4px;
+  }
+  pre {
+    background: var(--code-bg); color: #d4d8de; padding: 14px 16px;
+    border-radius: 8px; overflow-x: auto; margin: 10px 0 16px;
+    font-size: 13px; line-height: 1.6;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0 20px; background: #fff; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #eaeef2; }
+  .card {
+    background: #fff; border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; margin: 14px 0;
+  }
+  .tldr { border-left: 5px solid var(--ok); }
+  .danger-box { border-left: 5px solid var(--danger); background: #fff5f5; }
+  .warn-box { border-left: 5px solid var(--warn); background: #fffaeb; }
+  .tag {
+    display: inline-block; font-size: 12px; padding: 1px 10px; border-radius: 10px;
+    color: #fff; margin-right: 6px; vertical-align: middle;
+  }
+  .tag-ok { background: var(--ok); } .tag-warn { background: var(--warn); }
+  .tag-danger { background: var(--danger); } .tag-info { background: var(--primary); }
+  /* 决策树 */
+  .flow { margin: 18px 0; }
+  .flow .node {
+    background: #fff; border: 2px solid var(--primary); border-radius: 10px;
+    padding: 10px 16px; margin: 0 auto; max-width: 560px; text-align: center;
+  }
+  .flow .node.q { border-color: var(--warn); background: #fffaeb; }
+  .flow .node.end-ok { border-color: var(--ok); background: #f0fff4; }
+  .flow .node.end-fix { border-color: var(--danger); background: #fff5f5; }
+  .flow .arrow { text-align: center; color: #57606a; font-size: 13px; padding: 2px 0; }
+  .flow .arrow::before { content: "▼"; display: block; color: var(--primary); font-size: 12px; }
+  .branch { display: flex; gap: 16px; margin: 8px 0; }
+  .branch > div { flex: 1; }
+  .branch .label { text-align: center; font-size: 13px; font-weight: bold; padding: 4px 0; }
+  .branch .label.yes { color: var(--ok); } .branch .label.no { color: var(--danger); }
+  .chain { font-family: Consolas, monospace; font-size: 14px; line-height: 2; }
+  .chain .lvl { padding-left: 0; }
+  .chain .missing { color: var(--danger); font-weight: bold; }
+  footer { text-align: center; color: #8c959f; font-size: 12px; margin-top: 60px; }
+  .toc { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 14px 20px; margin-top: 20px; }
+  .toc a { color: var(--primary); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ol { margin: 6px 0 0 18px; }
+  @media print {
+    header { background: var(--primary); }
+    pre { background: #f0f0f0; color: #000; border: 1px solid #ccc; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="inner">
+    <h1>MQTT 8883 连接失败 — 排查手册与解决方案</h1>
+    <p>现象:部分电脑(尤其 Win7)连接 mqtt.ybm100.com:8883 失败,其他电脑正常</p>
+    <div class="meta">沉淀日期:2026-06-11 &nbsp;|&nbsp; 适用版本:SAAS 客户端(M2Mqtt 4.1 / .NET 4.0)&nbsp;|&nbsp; 配套脚本:Scripts/install-mqtt-root-certs.bat</div>
+  </div>
+</header>
+
+<div class="container">
+
+<div class="card tldr">
+  <h3>📌 一句话结论(TL;DR)</h3>
+  <p><b>mqtt.ybm100.com:8883 的服务器证书于 2026-05-27 更换</b>,新证书链的信任锚是
+  <code>USERTrust RSA Certification Authority</code>。<b>Win7 出厂根证书库没有这张根证书</b>,
+  依赖联网自动更新补齐;离线 / Ghost 精简 / 策略锁死的 Win7 机器补不到,证书链校验失败,TLS 握手抛异常,MQTT 连不上。</p>
+  <p>最快修复:在故障机以管理员运行 <code>Scripts/install-mqtt-root-certs.bat</code>(离线可用),看到
+  <code>[DONE] Everything OK.</code> 后重启客户端即可。</p>
+</div>
+
+<div class="toc">
+  <b>目录</b>
+  <ol>
+    <li><a href="#symptom">问题现象与日志特征</a></li>
+    <li><a href="#rootcause">根因分析</a></li>
+    <li><a href="#flow">现场排查决策树</a></li>
+    <li><a href="#diag">现场诊断命令(复制即用)</a></li>
+    <li><a href="#fix">解决方案(四条路径对比)</a></li>
+    <li><a href="#faq">常见疑问:能否按域名加信任?有无自动更新途径?</a></li>
+    <li><a href="#risk">遗留风险与跟进事项</a></li>
+    <li><a href="#appendix">附录:技术背景</a></li>
+  </ol>
+</div>
+
+<h2 id="symptom">1. 问题现象与日志特征</h2>
+<p>客户端日志(<code>MqttBaseHelper</code>)出现如下三连,且每 2 分钟重连一次、一直失败:</p>
+<pre><code>[INFO]-创建MQTT实例成功! mqtt.ybm100.com:8883
+[INFO]-MQTT正在连接中
+[ERROR]-创建MQTT连接失败：   at uPLibrary.Networking.M2Mqtt.MqttClient.Connect(...)
+   at XYY.Windows.SAAS.Net.Mqtt.MqttBaseHelper.MqttContent()</code></pre>
+<div class="card warn-box">
+  <b>⚠️ 日志陷阱:</b>当前代码 <code>MqttBaseHelper.cs:155</code> 只打印了 <code>ex.StackTrace</code>,
+  <b>没有打印 ex.Message 和 InnerException</b>,真实失败原因(证书无效 / 算法不匹配 / 连接超时)全被吞掉,
+  所以光看日志无法定位。建议尽快补上(见 §7 跟进事项)。
+</div>
+<p>关键特征:<b>同一版本客户端,有的电脑能连、有的连不上</b> → 问题在机器环境差异,不在服务端和代码逻辑。</p>
+
+<h2 id="rootcause">2. 根因分析</h2>
+<h3>2.1 新证书链(2026-05-27 起)</h3>
+<div class="card">
+  <div class="chain">
+    <div class="lvl">📄 ybm100.com(叶子证书,SAN 含 *.ybm100.com,有效期 2026-05-27 → 2026-12-11)</div>
+    <div class="lvl">└─ 🏛️ cnTrus RSA OV SSL CA 2(浙江葫芦娃,中间 CA)</div>
+    <div class="lvl">&nbsp;&nbsp;&nbsp;└─ 🏛️ Sectigo Public Server Authentication Root R46(中间根,SHA1: <code>2B:18:94:7A:...:C2:4F</code>)</div>
+    <div class="lvl">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ <span class="missing">🔑 USERTrust RSA Certification Authority(信任锚,SHA1: 2B:8F:1B:57:...:AD:8E)← Win7 出厂没有这张</span></div>
+  </div>
+</div>
+<h3>2.2 失败链路</h3>
+<ol>
+  <li>客户端用 .NET <code>SslStream</code> 标准校验:服务器证书必须能链到本机"受信任的根证书颁发机构"中的某张根证书;</li>
+  <li>Win7 出厂根证书库不含 USERTrust 根,正常情况靠系统的 <b>根证书自动更新</b> 机制联网按需下载补齐;</li>
+  <li>客户那类 Win7(Ghost 精简系统禁用了自动更新 / 内网白名单拦截 / 完全离线)补不到 → 链不可信 → 握手抛
+      <code>AuthenticationException</code>(中文报错:"根据验证过程，远程证书无效");</li>
+  <li>Win10/11 内置该根或能自动补齐,所以其他电脑正常 —— 这就是"有的能连有的不能连"的原因。</li>
+</ol>
+<h3>2.3 已排除的方向(排查时验证过)</h3>
+<table>
+  <tr><th>嫌疑</th><th>排除依据</th></tr>
+  <tr><td>服务端不支持老 TLS 版本</td><td>实测 broker 同时接受 TLS 1.0 和 TLS 1.2 握手</td></tr>
+  <tr><td>证书域名不匹配</td><td>SAN 含 <code>*.ybm100.com</code>,覆盖 mqtt.ybm100.com</td></tr>
+  <tr><td>TLS 1.0 被系统禁用(Win11 24H2 默认禁)</td><td>客户机是 Win7,TLS 1.0 默认开启(此项对新装 Win11 机器仍需警惕,见附录)</td></tr>
+  <tr><td>代码/版本差异</td><td>同版本客户端在其他机器正常</td></tr>
+</table>
+
+<h2 id="flow">3. 现场排查决策树</h2>
+<div class="flow">
+  <div class="node">客户反馈:MQTT 连不上(日志出现"创建MQTT连接失败")</div>
+  <div class="arrow"></div>
+  <div class="node q">① 检查系统时间是否准确(差几分钟以上也会导致证书校验失败)</div>
+  <div class="branch">
+    <div>
+      <div class="label no">时间不准</div>
+      <div class="node end-fix">校准时间 + 开启时间同步 → 重试</div>
+    </div>
+    <div>
+      <div class="label yes">时间正常</div>
+      <div class="node q">② 运行 §4.1 的 TLS 握手测试,看报错内容</div>
+    </div>
+  </div>
+  <div class="arrow"></div>
+  <div class="node q">③ 按报错分流</div>
+  <div class="branch">
+    <div>
+      <div class="label no">"根据验证过程，远程证书无效"</div>
+      <div class="node end-fix">缺根证书(本案例)<br>→ 跑 install-mqtt-root-certs.bat<br>或修复根证书自动更新(§5)</div>
+    </div>
+    <div>
+      <div class="label no">"不具有公用算法"</div>
+      <div class="node end-fix">TLS 版本/套件被禁<br>→ 查 SCHANNEL 注册表是否禁了 TLS 1.0<br>(Win11 24H2 / 安全基线常见)</div>
+    </div>
+    <div>
+      <div class="label no">连接超时 / 拒绝连接</div>
+      <div class="node end-fix">网络问题<br>→ 查防火墙、杀软、代理<br>是否拦 8883 端口</div>
+    </div>
+  </div>
+  <div class="arrow"></div>
+  <div class="node end-ok">修复后:重启客户端,日志出现"MQTT已连接成功"即闭环</div>
+</div>
+
+<h2 id="diag">4. 现场诊断命令(复制即用)</h2>
+<h3>4.1 TLS 握手测试(拿到真实报错,Win7 自带 PowerShell 即可)</h3>
+<pre><code>powershell -NoProfile -Command "try { $t=New-Object Net.Sockets.TcpClient('mqtt.ybm100.com',8883); $s=New-Object Net.Security.SslStream($t.GetStream()); $s.AuthenticateAsClient('mqtt.ybm100.com'); Write-Host 'OK: TLS handshake success' } catch { Write-Host ('FAIL: ' + $_.Exception.Message); if ($_.Exception.InnerException) { Write-Host ('inner: ' + $_.Exception.InnerException.Message) } }"</code></pre>
+<table>
+  <tr><th>输出</th><th>含义</th><th>去向</th></tr>
+  <tr><td><span class="tag tag-ok">OK</span>握手成功</td><td>证书/TLS 没问题</td><td>查客户端自身(账号、ClientId 冲突、MQTT 鉴权)</td></tr>
+  <tr><td><span class="tag tag-danger">FAIL</span>根据验证过程，远程证书无效</td><td>缺根证书</td><td>§5 方案 A 或 B</td></tr>
+  <tr><td><span class="tag tag-danger">FAIL</span>客户端和服务器无法通信…不具有公用算法</td><td>TLS 版本/套件被禁</td><td>查 SCHANNEL 注册表</td></tr>
+  <tr><td><span class="tag tag-danger">FAIL</span>连接尝试超时 / 目标计算机积极拒绝</td><td>网络不通</td><td>查防火墙/杀软/代理</td></tr>
+</table>
+<h3>4.2 检查根证书是否存在(管理员 cmd)</h3>
+<pre><code>certutil -store root 2b8f1b57330dbba2d07a6c51f70ee90ddab9ad8e</code></pre>
+<p>输出 <code>对象未找到</code> / <code>Object not found</code> = 缺 USERTrust 根证书,坐实根因。</p>
+<h3>4.3 检查"根证书自动更新"是否被禁(管理员 cmd)</h3>
+<pre><code>reg query "HKLM\SOFTWARE\Policies\Microsoft\SystemCertificates\AuthRoot" /v DisableRootAutoUpdate</code></pre>
+<p>值为 <code>0x1</code> = 被禁用(Ghost 精简系统重灾区);项不存在或为 0 = 未禁用,转查网络可达性:</p>
+<pre><code>ping ctldl.windowsupdate.com</code></pre>
+
+<h2 id="fix">5. 解决方案(四条路径对比)</h2>
+<table>
+  <tr><th>方案</th><th>做法</th><th>适用场景</th><th>优缺点</th></tr>
+  <tr>
+    <td><b>A. 兜底脚本</b><br><span class="tag tag-ok">已落地</span></td>
+    <td>管理员运行 <code>Scripts/install-mqtt-root-certs.bat</code>:按指纹检测两张根证书,缺则安装(PEM 内嵌,<b>离线可用</b>),装完自动做一次真实握手验证</td>
+    <td>存量故障机的现场应急,尤其完全离线机器</td>
+    <td>✅ 立竿见影、无依赖<br>❌ 需挨台机器跑;下次换 CA 链需更新脚本</td>
+  </tr>
+  <tr>
+    <td><b>B. 修复系统自动更新</b><br><span class="tag tag-info">治本·推荐先查</span></td>
+    <td>① <code>reg add "HKLM\SOFTWARE\Policies\Microsoft\SystemCertificates\AuthRoot" /v DisableRootAutoUpdate /t REG_DWORD /d 0 /f</code><br>② 放通 <code>ctldl.windowsupdate.com</code>(80 端口)</td>
+    <td>机器能上网、只是策略被 Ghost 镜像锁死</td>
+    <td>✅ 一条命令根治,以后换任何主流 CA 都自动适应(该服务 Win7 停服后仍可用)<br>❌ 完全离线机器无效</td>
+  </tr>
+  <tr>
+    <td><b>C. 客户端内置信任锚</b><br><span class="tag tag-warn">需开发·根治存量</span></td>
+    <td>升级 M2Mqtt → 4.3,传自定义 <code>RemoteCertificateValidationCallback</code>:系统校验通过则放行;报"根不可信"时用 <code>X509Chain.ExtraStore</code> 装入应用内置根证书重建链,<b>比对链根指纹一致才放行</b></td>
+    <td>随客户端版本发布,所有门店一次性根治</td>
+    <td>✅ 不动系统证书库、不需管理员、不依赖客户机网络<br>❌ 需要发版;换 CA 链时要随版本更新内置根</td>
+  </tr>
+  <tr>
+    <td><b>D. 安装包集成</b></td>
+    <td>把两张根证书集成进安装/升级包,安装时静默 <code>certutil -addstore root</code></td>
+    <td>新装与覆盖升级场景</td>
+    <td>✅ 自动化分发<br>❌ 只覆盖走安装流程的机器</td>
+  </tr>
+</table>
+<div class="card danger-box">
+  <b>🚫 不要这样做:</b>校验回调直接 <code>return true</code>(跳过证书校验)。这等于放弃 TLS 的服务器身份认证,
+  任何中间人都能冒充服务器,医保/收银场景绝对禁止。另外,Windows <b>没有"按域名信任"的系统设置</b>——
+  IE"受信任的站点"只影响浏览器安全区域,对 .NET SslStream 完全无效,信任只能加在证书上。
+</div>
+<h3>推荐组合</h3>
+<ol>
+  <li><b>当下:</b>故障机先查方案 B 的注册表(一条命令可能就全好),走不通再发方案 A 脚本;</li>
+  <li><b>中期:</b>客户端实施方案 C(随版本根治)+ 方案 D(新装机覆盖);</li>
+  <li><b>同时:</b>补 <code>MqttBaseHelper.cs:155</code> 的异常日志(见下节)。</li>
+</ol>
+
+<h2 id="faq">6. 常见疑问解答(FAQ)</h2>
+
+<h3>Q1:能不能在系统设置里对该域名(mqtt.ybm100.com)添加信任?</h3>
+<div class="card">
+  <p><b>不能。</b>Windows 的 TLS 信任模型是<b>基于证书链的,不存在"信任某个域名"的系统开关</b>:</p>
+  <ul>
+    <li>IE/Edge 里的"受信任的站点"只影响<b>浏览器的安全区域策略</b>(脚本、下载、Cookie 等),对 .NET
+        <code>SslStream</code>(MQTT 客户端走的就是它)的证书校验<b>完全无效</b>;</li>
+    <li>hosts 文件、防火墙白名单等也都不参与证书校验,改了没用;</li>
+    <li>校验逻辑只认一件事:<b>服务器证书能否链到本机"受信任的根证书颁发机构"里的某张根证书</b>。
+        所以信任只能加在<b>证书</b>上(装根证书,即方案 A/D),不能加在域名上。</li>
+  </ul>
+  <p>代码层面唯一"等价于无条件信任该域名"的做法,是自定义校验回调直接 <code>return true</code> 跳过校验——
+  <b>严禁使用</b>:等于放弃 TLS 的服务器身份认证,任何中间人(劫持路由器、ARP 欺骗、恶意 WiFi)都能冒充服务器,
+  医保/收银场景不可接受。安全的代码层替代是方案 C(内置信任锚,仍做完整链校验,只是信任锚由应用自带)。</p>
+</div>
+
+<h3>Q2:有没有能"自动更新证书"的途径,不用挨台机器手工装?</h3>
+<div class="card">
+  <p>有,而且 <b>Win7 本来就自带</b>。先澄清:服务器叶子证书的续期/更换是服务端运维的事,客户端从不需要"更新服务器证书",
+  客户端要保证的只是<b>信任锚(根证书)齐全</b>。让根证书自动齐全的途径有三条,按推荐顺序:</p>
+  <table>
+    <tr><th>途径</th><th>原理与做法</th><th>说明</th></tr>
+    <tr>
+      <td><b>① 系统根证书自动更新</b><br>(= 方案 B,推荐先查)</td>
+      <td>Win7 自带 Automatic Root Certificates Update:握手遇到陌生根时,CryptoAPI 实时从
+          <code>ctldl.windowsupdate.com</code> 按需下载。修复两点即可:<br>
+          ① 注册表 <code>DisableRootAutoUpdate</code> 改回 0(命令见 §5 方案 B);<br>
+          ② 内网放通 <code>ctldl.windowsupdate.com</code>(80 端口)</td>
+      <td>该服务不属于系统补丁,<b>Win7 2020 年停服后至今仍可用</b>。修好后零维护,
+          以后换任何主流 CA 的证书都自动适应,是真正意义的"自动更新"。仅完全离线机器无效</td>
+    </tr>
+    <tr>
+      <td><b>② 客户端内置信任锚</b><br>(= 方案 C)</td>
+      <td>根证书打包进客户端,校验回调里用 <code>X509Chain.ExtraStore</code> 补链 + 比对根指纹,
+          随客户端版本自动分发到所有门店</td>
+      <td>不依赖客户机网络与系统设置,离线机器也覆盖;换 CA 链时随版本更新内置根即可</td>
+    </tr>
+    <tr>
+      <td><b>③ 安装/升级包静默安装</b><br>(= 方案 D)</td>
+      <td>安装器以管理员身份静默执行 <code>certutil -addstore root</code></td>
+      <td>把手工脚本自动化进分发流程,覆盖所有走安装/升级的机器</td>
+    </tr>
+  </table>
+  <p><b>结论:</b>优先在故障机查途径①的注册表——如果只是被 Ghost 镜像关掉了,一条 <code>reg add</code> 就根治,
+  连脚本都不用发;离线/锁死的机器再用脚本(方案 A)应急,中期靠途径②③随版本根治。</p>
+</div>
+
+<h2 id="risk">7. 遗留风险与跟进事项</h2>
+<table>
+  <tr><th>事项</th><th>说明</th><th>建议</th></tr>
+  <tr>
+    <td>📅 证书 2026-12-11 到期</td>
+    <td>叶子证书有效期仅 ~6.5 个月。续期若沿用同一 CA 链,已装根的机器不受影响;<b>若运维再换 CA,同样故障会重演</b></td>
+    <td>与运维约定证书链固定;到期前一周回归验证 Win7 门店</td>
+  </tr>
+  <tr>
+    <td>📝 异常日志被吞</td>
+    <td><code>MqttBaseHelper.cs:155</code> 只打 <code>ex.StackTrace</code>,不打 <code>ex.Message</code>/InnerException,本次排查因此多绕了一大圈</td>
+    <td>改为递归输出 Message + InnerException,一条日志即可分流(证书/算法/网络)</td>
+  </tr>
+  <tr>
+    <td>🔒 M2Mqtt 4.1 只会用 TLS 1.0 握手</td>
+    <td>老库内部写死 <code>SslProtocols.Default</code>(SSL3+TLS1.0)。<b>Win11 24H2 起系统默认禁用 TLS 1.0/1.1</b>,门店换新电脑会撞上同一类"部分机器连不上",但报错是"不具有公用算法"</td>
+    <td>升级 M2Mqtt 4.3 + 显式 <code>MqttSslProtocols.TLSv1_2</code>(需把 XYY.Windows.SAAS.Net 从 .NET 4.0 升到 4.5+,Win7 SP1 兼容);可与方案 C 一并实施</td>
+  </tr>
+</table>
+
+<h2 id="appendix">8. 附录:技术背景</h2>
+<h3>8.1 为什么 Win7 缺这张根证书</h3>
+<p>微软不把全部根证书预装进系统,Win7 出厂只带一小部分,其余靠 <b>Automatic Root Certificates Update</b>:
+TLS 握手遇到陌生根时,CryptoAPI 实时从 <code>ctldl.windowsupdate.com</code> 下载受信任根列表(CTL)并按需安装。
+该服务不属于系统补丁,<b>Win7 2020 年停服后至今仍可用</b>。Ghost 精简镜像普遍把
+<code>DisableRootAutoUpdate</code> 设为 1,这是药店环境此类故障高发的根源。</p>
+<h3>8.2 本次排查的取证过程(可复用的方法论)</h3>
+<ol>
+  <li>用 openssl / PowerShell SslStream 分别以 TLS 1.0 / 1.2 直连 broker → 排除服务端协议问题;</li>
+  <li><code>openssl s_client -showcerts</code> 拉取完整证书链 → 发现签发日期 2026-05-27(两周前刚换)+ 信任锚为 USERTrust;</li>
+  <li>核对叶子证书 SAN → 排除域名不匹配;</li>
+  <li>结合"故障机均为 Win7"+ Win7 根证书分发机制 → 锁定根因;</li>
+  <li>提取链上两张 CA 证书、核对 SHA1 指纹(USERTrust 指纹与微软根证书计划官方记录一致)→ 制作离线安装脚本。</li>
+</ol>
+<h3>8.3 写 bat 脚本踩过的两个坑(防再犯)</h3>
+<ul>
+  <li><code>rem</code> 注释里写 <code>&lt;-</code> 箭头:cmd 连注释行里的 <code>&lt;</code> <code>&gt;</code> 都会按重定向解析,报"系统找不到指定的路径";</li>
+  <li>在 git bash 环境生成 bat 时 <code>&gt;nul</code> 被改写成 <code>&gt;/dev/null</code>:cmd 没有该路径,导致 <code>net session</code> 管理员检测形同虚设。生成后务必在真实 cmd 下完整跑一遍。</li>
+</ul>
+
+<footer>
+  沉淀于 2026-06-11 · SAAS 客户端团队 · 配套工具:Scripts/install-mqtt-root-certs.bat
+</footer>
+
+</div>
+</body>
+</html>
